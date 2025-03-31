@@ -71,13 +71,13 @@ security_patterns:
 ### Detect Anomalies
 
 ```bash
-loganomaly --input testdata/logs --output results --config logaudit.yaml
+loganomaly --input testdata/logs --output results --config loganomly.yaml
 ```
 
 ### Show Results in Dashboard
 
 ```bash
-loganomaly --input testdata/logs --output results --config logaudit.yaml --show-results
+loganomaly --input testdata/logs --output results --config loganomly.yaml --show-results
 ```
 
 ### Disable LLM classification
