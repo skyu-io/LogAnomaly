@@ -1,0 +1,12 @@
+numpy
+pandas
+aiohttp
+sentence-transformers
+scikit-learn
+drain3
+detect-secrets
+tqdm
+tiktoken
+streamlit
+pyyaml
+click

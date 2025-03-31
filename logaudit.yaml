@@ -1,0 +1,27 @@
+anomaly_threshold: 0.1
+top_percent: 5
+top_n_llm: 10
+enable_llm: true
+enable_spam_detection: true
+spam_template_threshold: 0.8
+max_log_lines: null
+large_log_warning_threshold: 1000
+enable_dependent_anomaly_filter: true
+llm_provider: mistral
+llm_config:
+  endpoint: http://localhost:11434/api/generate
+  model: mistral:instruct
+  timeout: 10
+  
+additional_security_patterns:
+  - name: "Slack Token"
+    pattern: "xox[baprs]-[0-9a-zA-Z]+"
+
+additional_rule_based_patterns:
+  - name: "Kubernetes CrashLoop"
+    pattern: "Back-off restarting failed container"
+    reason: "Kubernetes pod CrashLoop detected."
+
+  - name: "Invalid User"
+    pattern: "Invalid user .* from .*"
+    reason: "Possible brute-force SSH login attempt."

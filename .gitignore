@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+
+# Virtual environment
+.venv/
+env/
+venv/
+ENV/
+*.egg-info/
+
+# Pyenv
+.python-version
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# VSCode
+.vscode/
+
+# IDE files
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Logs
+*.log
+error.log
+logs/
+
+# Results
+results/
+non_anomalies/
+drain3/drain3_state.json
+drain3/drain3_logs/
+drain3/drain3.ini
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+.DS_Store
+testdata/
+
+# Test outputs
+tests/cloudwatch/*.json
+
+
+# Python cache
+*.pytest_cache/
+.cache/
+
+# Dist/Packaging
+dist/
+build/
+*.tar.gz
+*.whl
+
+# CLI entry point build
+loganomaly.egg-info/

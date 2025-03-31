@@ -1,0 +1,39 @@
+[
+    {
+      "@timestamp": "2025-03-28T04:22:01Z",
+      "@message": {
+        "log": "2025/03/28 04:22:01 Database connection error"
+      }
+    },
+    {
+      "@timestamp": "2025-03-28T04:22:05Z",
+      "@message": {
+        "log": "2025/03/28 04:22:05 Authorization: Bearer abcdef123456"
+      }
+    },
+    {
+      "@timestamp": "2025-03-28T04:22:10Z",
+      "@message": {
+        "log": "2025/03/28 04:22:10 Service restarting due to failure"
+      }
+    },
+    {
+      "@timestamp": "2025-03-28T04:22:15Z",
+      "@message": {
+        "log": "2025/03/28 04:22:15 info: Process started successfully"
+      }
+    },
+    {
+      "@timestamp": "2025-03-28T04:22:20Z",
+      "@message": {
+        "log": "2025/03/28 04:22:20 Debug: Polling API every 5 seconds"
+      }
+    },
+    {
+      "@timestamp": "2025-03-28T04:22:25Z",
+      "@message": {
+        "log": "2025/03/28 04:22:25 Error retrieving user profile: record not found"
+      }
+    }
+  ]
+  
