@@ -26,7 +26,7 @@ It detects anomalies using a combination of **statistical scoring, pattern-based
 Clone and install:
 
 ```bash
-git clone https://github.com/yourorg/loganomaly.git
+git clone https://github.com/skyu-io/LogAnomaly.git
 cd loganomaly
 pip install -e .
 ```
@@ -157,7 +157,7 @@ We welcome contributions!
 ### Setup
 
 ```bash
-git clone https://github.com/yourorg/loganomaly.git
+git clone https://github.com/skyu-io/LogAnomaly.git
 cd loganomaly
 python3 -m venv venv
 source venv/bin/activate
