@@ -8,7 +8,7 @@ setup(
     long_description_content_type="text/markdown",
     author="Nilesh Jayanandana",
     author_email="nilesh@example.com",
-    url="https://github.com/yourorg/loganomaly",
+    url="https://github.com/skyu/loganomaly",
     packages=find_packages(include=["loganomaly", "loganomaly.*"]),
     include_package_data=True,
     py_modules=['cli'],
@@ -24,7 +24,8 @@ setup(
         "scikit-learn",
         "drain3",
         "detect-secrets",
-        "streamlit>=1.0"
+        "streamlit>=1.0",
+        "plotly"
     ],
     entry_points={
         "console_scripts": [

@@ -1,42 +1,63 @@
 import os
 
-# === Config ===
+# === General Config ===
 INPUT_FOLDER = "tests/cloudwatch"
 RESULTS_FOLDER = "results"
-TOP_PERCENT = 0.05  # Top anomalies to classify
-ENABLE_LLM = True
-LLM_ENDPOINT = "http://localhost:11434/api/generate"
-LLM_MODEL = "mistral:instruct"
-CONCURRENCY = 10
-MAX_LOG_LENGTH = 512
-MAX_REASON_LENGTH = None
-ANOMALY_THRESHOLD = 0
-CONTEXT_WINDOW_SECONDS = 30
-TOP_N_LLM = 10
-TIMEOUT = 10 # Timeout for LLM requests
+MAX_LOG_LINES = None  # Compliance mode (limit log lines)
+LARGE_LOG_WARNING_THRESHOLD = 100000
 
-os.makedirs(RESULTS_FOLDER, exist_ok=True)
+# === Statistical Detection Config ===
+TOP_PERCENT = 0.05  # Top anomalies to classify
+ANOMALY_THRESHOLD = 0  # Threshold to trigger LLM
+USE_DRAIN3_LIGHT = False
 
 # === Repetitive Template Detection ===
 ENABLE_SPAM_DETECTION = True
 SPAM_TEMPLATE_THRESHOLD = 0.75
 
-# === Log Sampling (Compliance) ===
-MAX_LOG_LINES = None
+# === Rolling Window Detection ===
+ENABLE_ROLLING_WINDOW = True
+ROLLING_WINDOW_SIZE = 1000
+ROLLING_WINDOW_THRESHOLD = 0.75
 
-# === Drain3 Fast Mode ===
-USE_DRAIN3_LIGHT = False
-NON_ANOMALIES_FOLDER = "non_anomalies"
+# === LOF Detection ===
+ENABLE_LOF = True
+LOF_N_NEIGHBORS = 5
+LOF_CONTAMINATION = 0.05  # Ratio of anomalies
+
+# === Rule & Security Pattern ===
+ADDITIONAL_SECURITY_PATTERNS = []
+ADDITIONAL_RULE_BASED_PATTERNS = []
+
+# === Dependent Anomaly Filter ===
 ENABLE_DEPENDENT_ANOMALY_FILTER = True
-LARGE_LOG_WARNING_THRESHOLD = 100000
 
+# === LLM Config ===
+ENABLE_LLM = True
+LLM_ENDPOINT = "http://localhost:11434/api/generate"
+LLM_MODEL = "mistral:instruct"
+CONCURRENCY = 5  # Reduced concurrency to avoid overwhelming Ollama
+MAX_LOG_LENGTH = 512
+MAX_REASON_LENGTH = None
+TOP_N_LLM = 10
+TIMEOUT = 30  # Increased timeout for LLM requests
+LLM_PROVIDER = "ollama"
+
+# === Compliance Mode ===
+COMPLIANCE_MODE = False
+SUMMARY_ONLY = False
+VERBOSE = False
+
+# === Non Anomalies folder ===
+NON_ANOMALIES_FOLDER = "non_anomalies"
+
+# === Drain3 Paths ===
 DRAIN3_CONFIG_PATH = os.path.join(os.path.dirname(__file__), "drain3", "drain3.ini")
 DRAIN3_STATE_PATH = os.path.join(os.path.dirname(__file__), "drain3", "drain3_state.json")
 DRAIN3_LOG_DIR = os.path.join(os.path.dirname(__file__), "drain3", "drain3_logs")
 
-# === LLM Provider ===
-LLM_PROVIDER = "ollama"
+# === YAML Config Loader ===
+YAML_CONFIG = {}
 
-
-ADDITIONAL_SECURITY_PATTERNS = []
-ADDITIONAL_RULE_BASED_PATTERNS = []
+# === Ensure result folder ===
+os.makedirs(RESULTS_FOLDER, exist_ok=True)

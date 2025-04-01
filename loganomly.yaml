@@ -1,22 +1,41 @@
+# === Anomaly Detection Thresholds ===
 anomaly_threshold: 0.1
-top_percent: 5
-top_n_llm: 10
-enable_llm: true
+top_percent: 5  # Percentage of top anomalies for statistical detection
+top_n_llm: 10   # Max anomalies to classify using LLM
+max_log_lines: null  # Optional Compliance Mode (set a number if required)
+large_log_warning_threshold: 1000
+
+# === Statistical Detection ===
 enable_spam_detection: true
 spam_template_threshold: 0.8
-max_log_lines: null
-large_log_warning_threshold: 1000
 enable_dependent_anomaly_filter: true
+
+# === LOF Detection ===
+enable_lof: true
+lof_n_neighbors: 5
+lof_contamination: 0.05
+
+# === Rolling Window Flood Detection ===
+enable_rolling_window: true
+rolling_window_size: 1000
+rolling_window_threshold: 0.7
+
+# === LLM Configuration ===
+enable_llm: true
 llm_provider: mistral
 llm_config:
   endpoint: http://localhost:11434/api/generate
   model: mistral:instruct
   timeout: 10
-  
+
+# === Additional Security Patterns ===
 additional_security_patterns:
   - name: "Slack Token"
     pattern: "xox[baprs]-[0-9a-zA-Z]+"
+  - name: "Basic Auth Header"
+    pattern: "Authorization: Basic [a-zA-Z0-9=]+"
 
+# === Additional Rule-Based Anomaly Patterns ===
 additional_rule_based_patterns:
   - name: "Kubernetes CrashLoop"
     pattern: "Back-off restarting failed container"
@@ -25,3 +44,11 @@ additional_rule_based_patterns:
   - name: "Invalid User"
     pattern: "Invalid user .* from .*"
     reason: "Possible brute-force SSH login attempt."
+
+  - name: "Payment Failure"
+    pattern: "payment.*failed"
+    reason: "Payment operation failed"
+
+  - name: "Disk Full"
+    pattern: "no space left on device"
+    reason: "Disk capacity exceeded"

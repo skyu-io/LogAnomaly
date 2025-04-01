@@ -27,22 +27,22 @@ DEFAULT_RULE_BASED_PATTERNS = [
 
 def load_custom_patterns():
     """
-    Merge default patterns + additional patterns from YAML config.
+    Merge default rule & security patterns with additional patterns from config.
     """
     rule_patterns = DEFAULT_RULE_BASED_PATTERNS.copy()
     security_patterns = DEFAULT_SECURITY_PATTERNS.copy()
 
-    yaml_config = getattr(app_config, "YAML_CONFIG", {})
+    # Add additional patterns from config
+    extra_rules = getattr(app_config, "ADDITIONAL_RULE_BASED_PATTERNS", [])
+    extra_security = getattr(app_config, "ADDITIONAL_SECURITY_PATTERNS", [])
 
-    # Add rule patterns
-    extra_rules = yaml_config.get("rule_based_patterns", [])
     if extra_rules:
         rule_patterns.extend(extra_rules)
+        print(f"🔧 Loaded {len(extra_rules)} additional rule patterns")
 
-    # Add security patterns
-    extra_security = yaml_config.get("security_patterns", [])
     if extra_security:
         security_patterns.extend(extra_security)
+        print(f"🔐 Loaded {len(extra_security)} additional security patterns")
 
     return rule_patterns, security_patterns
 
