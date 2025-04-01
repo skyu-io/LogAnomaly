@@ -219,6 +219,7 @@ def process_file(filepath):
                       f"Avg time: {llm_stats['total_time']/max(llm_stats['total_calls'],1):.2f}s, "
                       f"Errors: {llm_stats['errors']}")
 
+                # Ensure classifications are properly saved
                 anomalies_df["classification"] = classifications
                 anomalies_df["reason"] = reasons
                 anomalies_df["tag"] = tags_list
@@ -265,10 +266,11 @@ def process_file(filepath):
         try:
             # Convert to datetime if not already
             if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
-                df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+                df = df.copy()  # Create a copy to avoid SettingWithCopyWarning
+                df["timestamp"] = pd.to_datetime(df["timestamp"], format="ISO8601", errors="coerce")
                 
             # Filter out invalid timestamps
-            valid_times = df[pd.notna(df["timestamp"])]
+            valid_times = df[pd.notna(df["timestamp"])].copy()  # Create a copy to avoid SettingWithCopyWarning
             
             if len(valid_times) > 0:
                 # Calculate time span and log rate
@@ -282,7 +284,7 @@ def process_file(filepath):
                     logs_per_hour = logs_per_minute * 60
                     
                     # Find peak log rate (logs per minute in the busiest minute)
-                    valid_times["minute"] = valid_times["timestamp"].dt.floor("min")
+                    valid_times.loc[:, "minute"] = valid_times["timestamp"].dt.floor("min")  # Use .loc to avoid SettingWithCopyWarning
                     logs_per_min = valid_times.groupby("minute").size()
                     peak_rate = logs_per_min.max() if not logs_per_min.empty else 0
                     

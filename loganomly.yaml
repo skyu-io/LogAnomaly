@@ -22,11 +22,11 @@ rolling_window_threshold: 0.7
 
 # === LLM Configuration ===
 enable_llm: true
-llm_provider: mistral
+llm_provider: ollama
 llm_config:
   endpoint: http://localhost:11434/api/generate
   model: mistral:instruct
-  timeout: 10
+  timeout: 30
 
 # === Additional Security Patterns ===
 additional_security_patterns:

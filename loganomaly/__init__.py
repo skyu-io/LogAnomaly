@@ -9,16 +9,16 @@ setup_logging()
 __version__ = "0.1.0"
 
 # Import main components
-from loganomaly.detectors import LOFDetector, RollingWindowDetector
+from loganomaly.detectors import compute_lof_scores, mark_lof_anomalies
 from loganomaly.llm_classifier import classify_log_llm, LLM_STATS
-from loganomaly.workflow import Pipeline, WorkflowContext, classify_log_with_pipeline
+from loganomaly.workflow import WorkflowContext, LogAnalysisWorkflow, classify_log_with_pipeline
 
 __all__ = [
-    'LOFDetector',
-    'RollingWindowDetector',
+    'compute_lof_scores',
+    'mark_lof_anomalies',
     'classify_log_llm',
     'LLM_STATS',
-    'Pipeline',
+    'LogAnalysisWorkflow',
     'WorkflowContext',
     'classify_log_with_pipeline'
 ]

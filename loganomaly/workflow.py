@@ -51,6 +51,8 @@ class ThinkingStep(WorkflowStep):
     async def execute(self, context: WorkflowContext) -> bool:
         try:
             log = context.get_result("log")
+            context_logs = context.get_result("context_logs", [])
+            
             if not log:
                 raise ValueError("No log entry found in context")
                 
@@ -59,8 +61,15 @@ class ThinkingStep(WorkflowStep):
                 'severity': self._extract_severity(log),
                 'component': self._extract_component(log),
                 'action': self._extract_action(log),
-                'error_indicators': self._find_error_indicators(log)
+                'error_indicators': self._find_error_indicators(log),
+                'context_logs': [l.get('log', '') for l in context_logs if 'log' in l],
+                'patterns': self._find_patterns(log, context_logs)
             }
+            
+            # Add additional context analysis
+            info['is_startup_related'] = self._is_startup_related(log)
+            info['contains_sensitive_info'] = self._contains_sensitive_info(log)
+            info['has_numeric_values'] = bool(re.search(r'\d+', log))
             
             context.add_result("log_info", info)
             return True
@@ -72,25 +81,47 @@ class ThinkingStep(WorkflowStep):
             
     def _extract_severity(self, log: str) -> str:
         """Extract severity level from log."""
-        severity_levels = ['ERROR', 'WARN', 'INFO', 'DEBUG']
-        for level in severity_levels:
-            if level in log.upper():
-                return level
+        # Check for standard log level formats
+        severity_patterns = [
+            r'\[(ERROR|WARN|INFO|DEBUG|TRACE|FATAL)\]',  # [INFO]
+            r'(ERROR|WARN|INFO|DEBUG|TRACE|FATAL):',     # INFO:
+            r'(ERROR|WARN|INFO|DEBUG|TRACE|FATAL) -'     # INFO -
+        ]
+        
+        for pattern in severity_patterns:
+            match = re.search(pattern, log, re.IGNORECASE)
+            if match:
+                return match.group(1).upper()
+        
+        # Check for presence of error-indicating terms
+        if re.search(r'error|exception|fail|crash|fatal', log, re.IGNORECASE):
+            return 'ERROR'
+        elif re.search(r'warn|caution|attention', log, re.IGNORECASE):
+            return 'WARN'
+            
         return 'UNKNOWN'
         
     def _extract_component(self, log: str) -> str:
         """Extract component name from log."""
-        # Simple extraction based on common patterns
+        # Try multiple patterns to extract component
         patterns = [
-            r'\[(.*?)\]',  # [component]
-            r'(\w+)\.',    # component.action
-            r'(\w+):',     # component:
+            r'\[([A-Za-z0-9._-]+)\]',        # [component]
+            r'([A-Za-z0-9._-]+)\s*:',        # component:
+            r'([A-Za-z0-9._-]+)\.(connect|init|start|config|process)', # component.action
         ]
         
         for pattern in patterns:
             match = re.search(pattern, log)
             if match:
-                return match.group(1)
+                component = match.group(1)
+                # Clean up common prefixes/suffixes
+                component = re.sub(r'^(service|module|component)\.', '', component)
+                return component
+                
+        # Extract first word after timestamp or log level as fallback
+        match = re.search(r'(?:\d{4}-\d{2}-\d{2}|\[(?:INFO|DEBUG|ERROR|WARN)\])[:\s]+([A-Za-z0-9._-]+)', log)
+        if match:
+            return match.group(1)
                 
         return 'unknown'
         
@@ -98,14 +129,20 @@ class ThinkingStep(WorkflowStep):
         """Extract action from log."""
         # Look for common action patterns
         patterns = [
-            r':\s*(\w+)',      # component: action
-            r'\.\s*(\w+)\s*:', # component.action:
+            r':\s*([A-Za-z0-9._-]+)',      # component: action
+            r'\.\s*([A-Za-z0-9._-]+)\s*:', # component.action:
+            r'(initializing|starting|configuring|processing|connecting|loading|saving|updating|creating|deleting|sending|receiving)',  # action verbs
         ]
         
         for pattern in patterns:
-            match = re.search(pattern, log)
+            match = re.search(pattern, log, re.IGNORECASE)
             if match:
-                return match.group(1)
+                return match.group(1).lower()
+                
+        # Try to find a verb-noun pattern
+        match = re.search(r'\b(init|start|stop|config|process|connect|disconnect|load|save|update|create|delete|send|receive)\s+([A-Za-z0-9._-]+)', log, re.IGNORECASE)
+        if match:
+            return f"{match.group(1).lower()}_{match.group(2).lower()}"
                 
         return 'unknown'
         
@@ -115,7 +152,9 @@ class ThinkingStep(WorkflowStep):
         error_patterns = [
             'error', 'exception', 'fail', 'invalid',
             'unable to', 'cannot', 'timeout', 'refused',
-            'denied', 'rejected', 'unauthorized'
+            'denied', 'rejected', 'unauthorized', 'crash',
+            'fatal', 'critical', 'unexpected', 'undefined',
+            'null', 'missing', 'not found', 'unavailable'
         ]
         
         log_lower = log.lower()
@@ -124,6 +163,56 @@ class ThinkingStep(WorkflowStep):
                 indicators.append(pattern)
                 
         return indicators
+        
+    def _is_startup_related(self, log: str) -> bool:
+        """Check if log is related to system startup."""
+        startup_terms = [
+            'start', 'init', 'boot', 'launch', 'starting',
+            'initializing', 'booting', 'launching', 'loading',
+            'configuring', 'configuration', 'setup'
+        ]
+        
+        log_lower = log.lower()
+        return any(term in log_lower for term in startup_terms)
+        
+    def _contains_sensitive_info(self, log: str) -> bool:
+        """Check if log contains potentially sensitive information."""
+        sensitive_patterns = [
+            r'password', r'secret', r'token', r'key', r'credential',
+            r'auth', r'login', r'user', r'account', r'api[-_]?key',
+            r'[a-zA-Z0-9+/]{40,}', r'[0-9a-f]{32,}'  # Long base64 or hex strings
+        ]
+        
+        for pattern in sensitive_patterns:
+            if re.search(pattern, log, re.IGNORECASE):
+                return True
+                
+        return False
+        
+    def _find_patterns(self, log: str, context_logs: List[Dict[str, Any]]) -> List[str]:
+        """Find common patterns or sequences in logs."""
+        patterns = []
+        
+        # Check for common log patterns
+        if re.search(r'retry|retrying|attempt', log, re.IGNORECASE):
+            patterns.append('retry_operation')
+            
+        if re.search(r'connect|connection', log, re.IGNORECASE):
+            patterns.append('connection_operation')
+            
+        if re.search(r'config|configuration', log, re.IGNORECASE):
+            patterns.append('configuration_operation')
+            
+        # Check for sequence patterns in context logs
+        context_log_texts = [l.get('log', '') for l in context_logs if 'log' in l]
+        if context_log_texts:
+            if any('start' in l.lower() for l in context_log_texts) and any('complete' in l.lower() for l in context_log_texts):
+                patterns.append('start_complete_sequence')
+                
+            if any('request' in l.lower() for l in context_log_texts) and any('response' in l.lower() for l in context_log_texts):
+                patterns.append('request_response_sequence')
+                
+        return patterns
 
 class PromptGenerationStep(WorkflowStep):
     """Generate a prompt for the LLM."""
@@ -152,35 +241,80 @@ class PromptGenerationStep(WorkflowStep):
         """Build the LLM prompt."""
         prompt = """You are a log analysis expert. Analyze this log entry and determine if it indicates an error, anomaly, or unusual behavior.
 
+Log entry to analyze:
+{log}
+
 Key Information:
 - Severity: {severity}
 - Component: {component}
 - Action: {action}
 - Error Indicators: {indicators}
+- Context Logs: {context_logs}
+- Patterns: {patterns}
+- Is Startup Related: {is_startup_related}
+- Contains Sensitive Info: {contains_sensitive_info}
+- Has Numeric Values: {has_numeric_values}
 
-Consider:
-1. Log severity level
-2. Message content and context
-3. System state and transitions
-4. Any error codes or exceptions
+Context logs (if available):
+{context_logs}
 
-IMPORTANT: Respond with EXACTLY one of these two formats and nothing else:
-- ANOMALY: <brief reason> (if the log indicates an error or anomaly)
-- NORMAL (if the log is a normal operational message)
+INSTRUCTIONS:
+1. Analyze the log message content, severity, and context
+2. Determine if this is a normal operational message or indicates an anomaly/error
+3. Respond in EXACTLY the following format:
 
-Do not provide any additional explanation or context beyond these formats.
+CLASSIFICATION: [normal/anomaly]
+REASON: [brief explanation of your classification]
+TAGS: [comma-separated list of relevant tags]
 
-Log entry to analyze:
-{log}
-""".format(
-            severity=log_info['severity'],
-            component=log_info['component'],
-            action=log_info['action'],
-            indicators=', '.join(log_info['error_indicators']) or 'none',
-            log=log
+Examples of correct responses:
+---
+CLASSIFICATION: normal
+REASON: Standard informational message about system startup
+TAGS: info, startup, configuration
+---
+CLASSIFICATION: anomaly
+REASON: Database connection failure indicates a potential issue
+TAGS: error, database, connectivity
+---
+
+IMPORTANT: Your response MUST follow this exact format with these exact headings. Do not add any additional text, explanations, or formatting. Always include all three sections: CLASSIFICATION, REASON, and TAGS.
+"""
+        
+        # Format the prompt with log information
+        formatted_prompt = prompt.format(
+            log=log,
+            severity=log_info.get("severity", "Unknown"),
+            component=log_info.get("component", "Unknown"),
+            action=log_info.get("action", "Unknown"),
+            indicators=", ".join(log_info.get("error_indicators", [])) or "None",
+            patterns=", ".join(log_info.get("patterns", [])) or "None",
+            is_startup_related=log_info.get("is_startup_related", False),
+            contains_sensitive_info=log_info.get("contains_sensitive_info", False),
+            has_numeric_values=log_info.get("has_numeric_values", False),
+            context_logs=self._format_context_logs(log_info.get("context_logs", []))
         )
         
-        return prompt
+        return formatted_prompt
+
+    def _format_context_logs(self, context_logs: List[Dict[str, Any]]) -> str:
+        """Format context logs for the prompt."""
+        if not context_logs:
+            return "None"
+            
+        formatted_logs = []
+        for log_entry in context_logs:
+            if isinstance(log_entry, dict) and 'log' in log_entry:
+                timestamp = log_entry.get('timestamp', '')
+                log_text = log_entry.get('log', '')
+                if timestamp and log_text:
+                    formatted_logs.append(f"- [{timestamp}] {log_text}")
+                else:
+                    formatted_logs.append(f"- {log_text}")
+            elif isinstance(log_entry, str):
+                formatted_logs.append(f"- {log_entry}")
+                
+        return "\n".join(formatted_logs[:5])  # Limit to 5 context logs to avoid token limits
 
 class LLMCallStep(WorkflowStep):
     """Make the actual LLM API call."""
@@ -226,22 +360,44 @@ class LLMCallStep(WorkflowStep):
             
             async def make_llm_call():
                 try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(
-                            app_config.LLM_ENDPOINT,
-                            json=payload,
-                            headers={'Content-Type': 'application/json'},
-                            timeout=aiohttp.ClientTimeout(total=app_config.TIMEOUT)
-                        ) as resp:
-                            if resp.status != 200:
-                                raise LLMProviderError(
-                                    f"HTTP {resp.status}",
-                                    app_config.LLM_PROVIDER,
-                                    status_code=resp.status
-                                )
-                            data = await resp.json()
-                            return provider.extract_response(data)
+                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=app_config.TIMEOUT)) as session:
+                        try:
+                            async with session.post(
+                                app_config.LLM_ENDPOINT,
+                                json=payload,
+                                headers={'Content-Type': 'application/json'},
+                                timeout=aiohttp.ClientTimeout(total=app_config.TIMEOUT),
+                                raise_for_status=False
+                            ) as resp:
+                                if resp.status != 200:
+                                    error_text = await resp.text()
+                                    logger.error(f"LLM HTTP error {resp.status}: {error_text}")
+                                    raise LLMProviderError(
+                                        f"HTTP {resp.status}: {error_text[:100]}...",
+                                        app_config.LLM_PROVIDER,
+                                        status_code=resp.status
+                                    )
+                                    
+                                try:
+                                    data = await resp.json()
+                                except Exception as e:
+                                    logger.error(f"Failed to parse JSON response: {str(e)}")
+                                    return f"Error processing response: Invalid JSON"
+                                
+                                # Add debug logging to see the raw response
+                                logger.debug(f"Raw LLM response data: {data}")
+                                
+                                response = provider.extract_response(data)
+                                
+                                # Log the extracted response
+                                logger.debug(f"Extracted LLM response: {response}")
+                                
+                                return response
+                        except asyncio.TimeoutError:
+                            logger.error(f"LLM request timed out after {app_config.TIMEOUT}s")
+                            return "Error: LLM request timed out"
                 except aiohttp.ClientError as e:
+                    logger.error(f"LLM client error: {str(e)}")
                     raise LLMProviderError(
                         str(e),
                         app_config.LLM_PROVIDER,
@@ -265,18 +421,22 @@ class LLMCallStep(WorkflowStep):
                 error_callback=on_retry_error
             )
             
-            if not reply or not reply.strip():
-                raise LLMProviderError(
-                    "Empty response from model",
-                    app_config.LLM_PROVIDER
-                )
-                
+            # Even if we get an empty or error response from the provider,
+            # we'll still continue the workflow with the response we got
+            # The provider now returns helpful error messages instead of empty strings
             context.add_result("llm_response", reply)
+            
+            # Log a warning if the response seems problematic
+            if reply.startswith("Error") or reply.startswith("No response") or reply.startswith("Empty response"):
+                logger.warning(f"Potentially problematic LLM response: {reply}")
+            
             return True
             
         except Exception as e:
             logger.error(f"Error in LLM call: {str(e)}")
-            context.add_error(self.name, e)
+            context.add_error("llm_call", e)
+            context.add_result("llm_response", f"Error: {str(e)}")
+            logger.error("LLM Error: " + str(e))
             return False
 
 class ResponseEvaluationStep(WorkflowStep):
@@ -294,30 +454,80 @@ class ResponseEvaluationStep(WorkflowStep):
             # Parse and validate response
             response = response.strip()
             
-            # Handle more verbose responses
-            if response.upper().startswith('NORMAL'):
-                # Extract just the classification part
-                context.add_result("classification", "normal")
-                # If there's a reason in parentheses or after colon, extract it
-                if ':' in response:
-                    reason = response.split(':', 1)[1].strip()
-                    context.add_result("reason", reason)
-                else:
-                    context.add_result("reason", None)
+            # Log the raw response for debugging
+            logger.info(f"Raw LLM response for evaluation: {response}")
+            
+            # Check if response contains error messages from provider
+            error_indicators = ["Error processing", "No response generated", "Empty response", 
+                               "Error:", "timed out", "Invalid JSON"]
+            if any(err in response for err in error_indicators):
+                logger.warning(f"LLM returned an error response: {response}")
+                context.add_result("classification", "Error")
+                context.add_result("reason", f"LLM Error: {response.split(':', 1)[1].strip() if ':' in response else ''}")
+                context.add_result("tags", ["Unknown"])
                 return True
-                
-            elif response.upper().startswith('ANOMALY:'):
-                reason = response[8:].strip()
-                context.add_result("classification", "anomaly")
-                context.add_result("reason", reason)
-                return True
-                
-            else:
-                raise ValueError(f"Invalid response format: {response}")
+            
+            # Try to extract classification, reason, and tags using regex patterns
+            classification = "Unknown"
+            reason = response  # Use the entire response as the reason by default
+            tags = ["Unknown"]
+            
+            # Try to extract classification (case insensitive)
+            class_patterns = [
+                r"(?i)classification:\s*(\w+)",  # CLASSIFICATION: normal
+                r"(?i)^(normal|anomaly|error)",  # NORMAL: or ANOMALY: or ERROR:
+                r"(?i)this is (normal|anomalous|an anomaly|an error)"  # This is normal/anomalous/an error
+            ]
+            
+            for pattern in class_patterns:
+                match = re.search(pattern, response)
+                if match:
+                    class_value = match.group(1).lower()
+                    if class_value in ["normal", "anomaly", "anomalous"]:
+                        classification = class_value.capitalize()
+                    elif class_value in ["error"]:
+                        classification = "Error"
+                    break
+            
+            # Try to extract reason
+            reason_patterns = [
+                r"(?i)reason:\s*(.+?)(?=\n|tags:|$)",  # REASON: something
+                r"(?i)because\s+(.+?)(?=\n|tags:|$)",  # because something
+                r"(?i):\s*(.+?)(?=\n|tags:|$)"         # NORMAL: something
+            ]
+            
+            for pattern in reason_patterns:
+                match = re.search(pattern, response)
+                if match:
+                    extracted_reason = match.group(1).strip()
+                    if extracted_reason:
+                        reason = extracted_reason
+                        break
+            
+            # Try to extract tags
+            tags_match = re.search(r"(?i)tags:\s*(.+?)(?=\n|$)", response)
+            if tags_match:
+                tags_str = tags_match.group(1).strip()
+                tags = [tag.strip() for tag in tags_str.split(",") if tag.strip()]
+            
+            logger.info(f"Extracted classification: {classification}, reason: {reason[:50]}..., tags: {tags}")
+            
+            # Set results
+            context.add_result("classification", classification)
+            context.add_result("reason", reason)
+            context.add_result("tags", tags)
+            
+            return True
                 
         except Exception as e:
             logger.error(f"Error in response evaluation: {str(e)}")
             context.add_error(self.name, e)
+            
+            # Even if there's an error, provide default values
+            context.add_result("classification", "Error")
+            context.add_result("reason", f"Error: {str(e)}")
+            context.add_result("tags", ["Unknown"])
+            
             return False
 
 class LogAnalysisWorkflow:

@@ -131,29 +131,54 @@ def tag_label(label):
 
 def extract_tags(reply):
     try:
-        result = json.loads(reply)
-
-        label = result.get("classification", "Unknown")
-        reason = result.get("reason", "Unknown")
-        tags = result.get("tags", [])
-
-        if "Routine" in tags or "Non-Anomaly" in tags:
-            label = "Routine"
-        elif "Possible Security Threat" in tags:
-            label = "Possible Security Threat"
-        elif "Operational Error" in tags:
-            label = "Operational Error"
-        elif "Sensitive Information Leak" in tags:
-            label = "Sensitive Information Leak"
-        elif "Configuration Issue" in tags:
-            label = "Configuration Issue"
+        # First try to parse as JSON (in case the LLM returns JSON)
+        try:
+            result = json.loads(reply)
+            label = result.get("classification", "Unknown")
+            reason = result.get("reason", "Unknown")
+            tags = result.get("tags", [])
+            
+            # Return early if we successfully parsed JSON
+            return label, short_reason(reason), tags
+        except json.JSONDecodeError:
+            # Not JSON, continue with text parsing
+            pass
+        
+        # Extract classification using regex
+        classification_match = re.search(r"(?i)classification:\s*(\w+)", reply)
+        label = classification_match.group(1).strip() if classification_match else "Unknown"
+        
+        # Convert classification to standard format
+        if label.lower() == "normal":
+            label = "Normal"
+        elif label.lower() in ["anomaly", "anomalous"]:
+            label = "Anomaly"
+        elif label.lower() == "error":
+            label = "Error"
+            
+        # Extract reason using regex
+        reason_match = re.search(r"(?i)reason:\s*(.+?)(?=\n|tags:|$)", reply)
+        reason = reason_match.group(1).strip() if reason_match else reply
+        
+        # Extract tags using regex
+        tags_match = re.search(r"(?i)tags:\s*(.+?)(?=\n|$)", reply)
+        if tags_match:
+            tags_str = tags_match.group(1).strip()
+            tags = [tag.strip() for tag in tags_str.split(",") if tag.strip()]
         else:
-            label = "Unknown"
-
+            tags = ["Unknown"]
+            
+        # Apply tag-based classification logic
+        if "routine" in [t.lower() for t in tags] or "non-anomaly" in [t.lower() for t in tags]:
+            label = "Normal"
+        elif any(security in [t.lower() for t in tags] for security in ["security", "sensitive", "leak"]):
+            label = "Security"
+            
         return label, short_reason(reason), tags
-
-    except Exception:
-        return "Unknown", "Could not parse", ["Unknown"]
+        
+    except Exception as e:
+        print(f"Error extracting tags: {str(e)}")
+        return "Unknown", reply, ["Unknown"]
 
 
 def is_non_anomalous(log_line, filename, non_anomalies_folder=None):

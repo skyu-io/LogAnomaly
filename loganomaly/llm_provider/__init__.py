@@ -128,44 +128,43 @@ class OllamaProvider(LLMProvider):
             "stream": False,
             "options": {
                 "temperature": 0.7,
-                "num_predict": 150,
-                "stop": ["</s>", "Human:", "Assistant:"],
-                "repeat_penalty": 1.1
+                "top_p": 0.9,
+                "top_k": 40,
+                "num_predict": 1024
             }
         }
-        
+    
     def extract_response(self, response_data: Dict[str, Any]) -> str:
+        """Extract the response text from Ollama API response."""
         try:
-            self.validate_response(response_data)
-            return response_data["response"].strip()
-        except KeyError as e:
-            raise LLMProviderError(
-                f"Invalid response format: missing {e}",
-                "ollama",
-                response=response_data
-            )
+            if not response_data:
+                logger.warning(f"Empty response data from Ollama")
+                return "No response generated"
+                
+            if "response" not in response_data:
+                logger.warning(f"Missing 'response' field in Ollama response: {response_data}")
+                # Try to extract from other fields if available
+                if "message" in response_data:
+                    return response_data["message"]
+                if "content" in response_data:
+                    return response_data["content"]
+                return "No valid response format detected"
             
+            response = response_data.get("response", "").strip()
+            if not response:
+                logger.warning("Empty response string from Ollama")
+                return "Empty response from model"
+                
+            return response
+        except Exception as e:
+            logger.error(f"Error extracting Ollama response: {e}")
+            return f"Error processing response: {str(e)}"
+    
     def validate_response(self, response_data: Dict[str, Any]) -> None:
-        if "error" in response_data:
-            error = response_data["error"]
-            raise LLMProviderError(
-                error.get("message", "Unknown error"),
-                "ollama",
-                status_code=error.get("status_code"),
-                response=response_data
-            )
-        if "response" not in response_data:
-            raise LLMProviderError(
-                "No response in response data",
-                "ollama",
-                response=response_data
-            )
-        if not response_data["response"].strip():
-            raise LLMProviderError(
-                "Empty response from model",
-                "ollama",
-                response=response_data
-            )
+        """Validate the Ollama API response."""
+        # For Ollama, we'll be more lenient in validation
+        # and handle issues in extract_response instead
+        pass
 
 class MistralProvider(LLMProvider):
     """Mistral API provider implementation."""
@@ -175,21 +174,33 @@ class MistralProvider(LLMProvider):
             "model": self.model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.7,
-            "max_tokens": 150
+            "max_tokens": 150,
+            "stream": False  # Ensure streaming is disabled for more reliable responses
         }
         
     def extract_response(self, response_data: Dict[str, Any]) -> str:
+        if not response_data:
+            logger.warning(f"Empty response data from Mistral")
+            return "No response generated"
+            
         try:
             self.validate_response(response_data)
             return response_data["choices"][0]["message"]["content"].strip()
         except KeyError as e:
+            logger.error(f"Invalid Mistral response format: {response_data}")
+            return f"Error processing response: {str(e)}"
+        except Exception as e:
+            logger.error(f"Unexpected error extracting Mistral response: {str(e)}")
+            return f"Error processing response: {str(e)}"
+            
+    def validate_response(self, response_data: Dict[str, Any]) -> None:
+        if not response_data:
             raise LLMProviderError(
-                f"Invalid response format: missing {e}",
+                "Empty response data",
                 "mistral",
                 response=response_data
             )
             
-    def validate_response(self, response_data: Dict[str, Any]) -> None:
         if "error" in response_data:
             error = response_data["error"]
             raise LLMProviderError(
