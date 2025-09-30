@@ -105,7 +105,32 @@ def get_context_logs(df, index, window=5):
     start = max(index - window, 0)
     end = min(index + window + 1, len(df))
     context = df.iloc[start:end][["timestamp", "log"]].to_dict(orient="records")
-    return context
+    
+    # Filter out malformed or incomplete log entries
+    filtered_context = []
+    for log_entry in context:
+        log_text = log_entry.get("log", "").strip()
+        timestamp = log_entry.get("timestamp", "").strip()
+        
+        # Skip entries that look like fragments or incomplete logs
+        if (
+            len(log_text) < 5 or  # Too short to be meaningful
+            len(log_text.split()) < 2 or  # Single word entries (likely fragments)
+            not timestamp or len(timestamp) < 3 or  # Missing or too short timestamps
+            timestamp.startswith("(") or  # Parenthetical timestamps (fragments)
+            timestamp.startswith("'") or  # Quote-prefixed timestamps (fragments)
+            timestamp.startswith("+") or  # Command prefixes
+            not any(c.isdigit() for c in timestamp) or  # No digits in timestamp (likely not a real timestamp)
+            log_text.startswith("'") and log_text.endswith("'") and len(log_text) < 50 or  # Short quoted fragments
+            log_text.count("/") > 3 and len(log_text) < 100 or  # Path fragments
+            "..." in log_text or  # Truncated content
+            log_text.startswith("(") and log_text.endswith(")") and len(log_text) < 100  # Parenthetical fragments
+        ):
+            continue
+            
+        filtered_context.append(log_entry)
+    
+    return filtered_context
 
 
 def apply_rule_based_classification(row):
@@ -236,8 +261,9 @@ def process_file(filepath):
         else:
             llm_stats = {}
 
-    routine_indices = anomalies_df[anomalies_df["classification"] == "Routine"].index
-    anomalies_df.loc[routine_indices, "is_anomaly"] = 0
+    # Remove logs that LLM classified as non-anomalous
+    normal_indices = anomalies_df[anomalies_df["classification"].isin(["Routine", "Normal"])].index
+    anomalies_df.loc[normal_indices, "is_anomaly"] = 0
 
     if not app_config.ENABLE_LLM:
         context_logs = []
@@ -250,7 +276,7 @@ def process_file(filepath):
 
     final_anomalies_df = pd.concat([
         df[df["is_rule_based"] == True],
-        anomalies_df
+        anomalies_df[anomalies_df["is_anomaly"] == 1]  # Only include actual anomalies
     ], ignore_index=True)
 
     out_file = os.path.join(app_config.RESULTS_FOLDER, f"{os.path.splitext(filename)[0]}_anomalies.json")
