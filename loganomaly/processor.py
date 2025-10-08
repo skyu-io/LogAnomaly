@@ -34,10 +34,28 @@ def load_logs(filepath):
             with open(filepath, "r") as f:
                 data = json.load(f)
                 for record in data:
-                    message = record.get("@message", {}).get("log", "").strip()
+                    # Extract message from various possible fields
+                    message = ""
+                    if "@message" in record and isinstance(record["@message"], dict):
+                        message = record["@message"].get("log", "").strip()
+                    elif "message" in record:
+                        message = record["message"].strip() if isinstance(record["message"], str) else ""
+                    elif "log" in record:
+                        message = record["log"].strip() if isinstance(record["log"], str) else ""
+                    elif "@message" in record and isinstance(record["@message"], str):
+                        message = record["@message"].strip()
+                    
                     if message:
+                        # Extract timestamp from various possible fields
+                        timestamp = ""
+                        timestamp_fields = ["@timestamp", "timestamp", "time", "@time", "datetime", "date"]
+                        for field in timestamp_fields:
+                            if field in record and record[field]:
+                                timestamp = str(record[field])
+                                break
+                        
                         log_lines.append({
-                            "timestamp": record.get("@timestamp", ""),
+                            "timestamp": timestamp,
                             "log": message,
                             "source_file": filename
                         })
@@ -108,6 +126,14 @@ def get_context_logs(df, index, window=5):
     
     # Filter out malformed or incomplete log entries
     filtered_context = []
+    target_timestamp = None
+    
+    # Find the target log's timestamp for time-based filtering
+    for log_entry in context:
+        if log_entry.get("timestamp") == df.iloc[index]["timestamp"]:
+            target_timestamp = log_entry.get("timestamp", "").strip()
+            break
+    
     for log_entry in context:
         log_text = log_entry.get("log", "").strip()
         timestamp = log_entry.get("timestamp", "").strip()
@@ -127,10 +153,102 @@ def get_context_logs(df, index, window=5):
             log_text.startswith("(") and log_text.endswith(")") and len(log_text) < 100  # Parenthetical fragments
         ):
             continue
+        
+        # Time-based filtering: exclude logs from different days if target timestamp is available
+        if target_timestamp and len(timestamp) >= 10 and len(target_timestamp) >= 10:
+            try:
+                target_date = target_timestamp[:10]  # Extract YYYY-MM-DD
+                log_date = timestamp[:10]
+                if target_date != log_date:  # Different day
+                    continue
+            except:
+                pass  # If parsing fails, include the log
             
         filtered_context.append(log_entry)
     
     return filtered_context
+
+
+def is_security_related_anomaly(row, security_patterns):
+    """
+    Determine if an anomaly is security-related based on various indicators.
+    """
+    log_text = row.get("log", "").lower()
+    classification = row.get("classification", "").lower()
+    tags = row.get("tag", [])
+    reason = row.get("reason", "").lower()
+    
+    # Check if it's a security leak
+    for pattern in security_patterns:
+        if re.search(pattern["pattern"], row.get("log", ""), re.IGNORECASE):
+            return True
+    
+    # Check classification and reason for security keywords
+    security_keywords = [
+        "security", "breach", "unauthorized", "authentication", "auth", "login", "password",
+        "token", "credential", "privilege", "permission", "access", "intrusion", "attack",
+        "malicious", "suspicious", "threat", "vulnerability", "exploit", "injection",
+        "xss", "csrf", "sql injection", "brute force", "ddos", "dos", "phishing",
+        "malware", "virus", "trojan", "ransomware", "backdoor", "rootkit", "keylogger",
+        "firewall", "blocked", "denied", "forbidden", "failed login", "invalid user",
+        "certificate", "ssl", "tls", "encryption", "decrypt", "hash", "signature",
+        "audit", "compliance", "policy violation", "data leak", "exposure", "breach"
+    ]
+    
+    # Check in classification
+    if any(keyword in classification for keyword in security_keywords):
+        return True
+    
+    # Check in reason
+    if any(keyword in reason for keyword in security_keywords):
+        return True
+    
+    # Check in tags
+    if isinstance(tags, list):
+        for tag in tags:
+            if isinstance(tag, str) and any(keyword in tag.lower() for keyword in security_keywords):
+                return True
+    
+    # Check for specific log patterns that indicate security issues
+    security_log_patterns = [
+        r"failed.*login",
+        r"invalid.*user",
+        r"authentication.*failed",
+        r"access.*denied",
+        r"permission.*denied",
+        r"unauthorized.*access",
+        r"security.*violation",
+        r"blocked.*request",
+        r"suspicious.*activity",
+        r"malicious.*request",
+        r"sql.*injection",
+        r"xss.*attack",
+        r"csrf.*token",
+        r"brute.*force",
+        r"ddos.*attack",
+        r"firewall.*block",
+        r"intrusion.*detect",
+        r"virus.*detect",
+        r"malware.*detect",
+        r"certificate.*error",
+        r"ssl.*error",
+        r"encryption.*failed",
+        r"audit.*failure",
+        r"compliance.*violation",
+        r"data.*breach",
+        r"information.*leak",
+        r"privilege.*escalation",
+        r"buffer.*overflow",
+        r"code.*injection",
+        r"path.*traversal",
+        r"directory.*traversal"
+    ]
+    
+    for pattern in security_log_patterns:
+        if re.search(pattern, log_text, re.IGNORECASE):
+            return True
+    
+    return False
 
 
 def apply_rule_based_classification(row):
@@ -143,8 +261,10 @@ def apply_rule_based_classification(row):
         row["is_rule_based"] = True
         row["is_anomaly"] = 1
         row["anomaly_source"] = "Rule-Based"
+        row["is_security_related"] = is_security_related_anomaly(row, custom_security_patterns)
     else:
         row["is_rule_based"] = False
+        row["is_security_related"] = False
     return row
 
 
@@ -251,6 +371,11 @@ def process_file(filepath):
                 anomalies_df["cleaned_log"] = cleaned_logs
                 anomalies_df["is_llm_anomaly"] = True
                 anomalies_df["anomaly_source"] = "LLM"
+                
+                # Add security classification for LLM anomalies
+                anomalies_df["is_security_related"] = anomalies_df.apply(
+                    lambda row: is_security_related_anomaly(row, custom_security_patterns), axis=1
+                )
 
                 if app_config.ENABLE_DEPENDENT_ANOMALY_FILTER:
                     anomalies_df = anomalies_df.apply(apply_dependent_anomaly_filter, axis=1)
@@ -261,8 +386,8 @@ def process_file(filepath):
         else:
             llm_stats = {}
 
-    # Remove logs that LLM classified as non-anomalous
-    normal_indices = anomalies_df[anomalies_df["classification"].isin(["Routine", "Normal"])].index
+    # Remove logs that LLM classified as non-anomalous or uncertain
+    normal_indices = anomalies_df[anomalies_df["classification"].isin(["Routine", "Normal", "unknown"])].index
     anomalies_df.loc[normal_indices, "is_anomaly"] = 0
 
     if not app_config.ENABLE_LLM:
@@ -271,6 +396,12 @@ def process_file(filepath):
             context = get_context_logs(df, idx)
             context_logs.append(context)
         anomalies_df["context_logs"] = context_logs
+        
+        # Add security classification for non-LLM anomalies if not already set
+        if "is_security_related" not in anomalies_df.columns:
+            anomalies_df["is_security_related"] = anomalies_df.apply(
+                lambda row: is_security_related_anomaly(row, custom_security_patterns), axis=1
+            )
 
     df["log"] = df["log"].apply(redact_security_leaks)
 
@@ -365,26 +496,105 @@ def process_file(filepath):
         "examples": [leak["log"] for leak in security_leaks[:3]]
     }
 
+    # Calculate SIEM-specific metrics
+    critical_anomalies = len(final_anomalies_df[final_anomalies_df["is_anomaly"] == 1])
+    security_incidents = len(security_leaks) + int(rule_based_count)
+    
+    # Risk assessment
+    risk_level = "LOW"
+    if security_incidents > 5 or critical_anomalies > 10:
+        risk_level = "HIGH"
+    elif security_incidents > 2 or critical_anomalies > 5:
+        risk_level = "MEDIUM"
+    
+    # Threat indicators
+    threat_indicators = []
+    if flood_detected:
+        threat_indicators.append("LOG_FLOODING")
+    if len(security_leaks) > 0:
+        threat_indicators.append("DATA_EXPOSURE")
+    if rule_based_count > 0:
+        threat_indicators.append("RULE_VIOLATIONS")
+    if time_metrics.get("error_rate", 0) > 0.1:
+        threat_indicators.append("HIGH_ERROR_RATE")
+    
     summary = {
-        "filename": filename,
-        "original_log_count": original_count,
-        "processed_log_count": len(df),
-        "anomalies_detected": int(final_anomalies_df["is_anomaly"].sum()),
-        "volume_stats": volume_stats,
-        "log_flood_detected": flood_detected,
-        "flood_templates": flood_templates,
-        "anomaly_output": out_file,
-        "llm_stats": llm_stats,
-        "log_severity_summary": severity_summary,
-        "tag_summary": tag_summary,
-        "llm_classification_done": llm_classification_done,
-        "rule_based_anomalies": int(rule_based_count),
-        "skipped_known_non_anomalies": skipped_non_anomalies,
-        "security_leak_summary": leak_summary,
-        "template_diversity": template_diversity,
-        "time_metrics": time_metrics,
-        "component_metrics": component_metrics,
-        "max_logs_limit": app_config.MAX_LOG_LINES
+        # === SIEM EXECUTIVE SUMMARY ===
+        "siem_report": {
+            "analysis_timestamp": pd.Timestamp.now().isoformat(),
+            "source_file": filename,
+            "risk_level": risk_level,
+            "security_incidents": security_incidents,
+            "critical_anomalies": critical_anomalies,
+            "threat_indicators": threat_indicators,
+            "analysis_period": {
+                "start_time": time_metrics.get("start_time", "Unknown"),
+                "end_time": time_metrics.get("end_time", "Unknown"),
+                "duration_hours": round(time_metrics.get("time_span_seconds", 0) / 3600, 2)
+            }
+        },
+        
+        # === SECURITY ANALYSIS ===
+        "security_assessment": {
+            "data_exposure_incidents": {
+                "count": len(security_leaks),
+                "examples": [leak["log"] for leak in security_leaks[:3]],
+                "types_detected": list(set([leak.get("type", "Unknown") for leak in security_leaks]))
+            },
+            "rule_based_violations": {
+                "count": int(rule_based_count),
+                "severity": "HIGH" if rule_based_count > 3 else "MEDIUM" if rule_based_count > 0 else "LOW"
+            },
+            "anomalous_behavior": {
+                "statistical_anomalies": critical_anomalies,
+                "ai_verified_threats": len(final_anomalies_df[
+                    (final_anomalies_df["is_anomaly"] == 1) & 
+                    (final_anomalies_df["classification"] == "Anomaly")
+                ]) if "classification" in final_anomalies_df.columns else 0,
+                "false_positives_filtered": skipped_non_anomalies
+            }
+        },
+        
+        # === OPERATIONAL INTELLIGENCE ===
+        "operational_metrics": {
+            "log_volume": {
+                "total_events": original_count,
+                "processed_events": len(df),
+                "events_per_hour": round(time_metrics.get("logs_per_hour", 0), 2),
+                "peak_rate_per_minute": time_metrics.get("peak_rate_per_minute", 0)
+            },
+            "system_health": {
+                "error_rate": round(time_metrics.get("error_rate", 0) * 100, 2),
+                "warning_count": severity_summary.get("warn", 0),
+                "error_count": severity_summary.get("error", 0),
+                "flood_detection": {
+                    "detected": flood_detected,
+                    "affected_templates": len(flood_templates)
+                }
+            },
+            "component_analysis": component_metrics
+        },
+        
+        # === TECHNICAL DETAILS ===
+        "technical_analysis": {
+            "template_diversity": template_diversity,
+            "top_log_patterns": volume_stats,
+            "ai_analysis": {
+                "llm_classification_enabled": llm_classification_done,
+                "total_llm_calls": llm_stats.get("total_calls", 0),
+                "average_response_time": round(llm_stats.get("total_time", 0) / max(llm_stats.get("total_calls", 1), 1), 2),
+                "classification_errors": llm_stats.get("errors", 0)
+            }
+        },
+        
+        # === OUTPUTS ===
+        "report_outputs": {
+            "anomaly_details_file": out_file,
+            "processing_limits": {
+                "max_logs_analyzed": app_config.MAX_LOG_LINES,
+                "compliance_mode": app_config.MAX_LOG_LINES is not None
+            }
+        }
     }
 
     summary_file = os.path.join(app_config.RESULTS_FOLDER, f"{os.path.splitext(filename)[0]}_summary.json")

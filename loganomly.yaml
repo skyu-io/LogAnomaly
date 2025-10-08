@@ -26,7 +26,7 @@ llm_provider: ollama
 llm_config:
   endpoint: http://localhost:11434/api/generate
   model: mistral:instruct
-  timeout: 30
+  timeout: 60
 
 # === Additional Security Patterns ===
 additional_security_patterns:

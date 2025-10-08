@@ -522,3 +522,6 @@ This architecture ensures flexibility, extensibility, and robustness in log anal
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+
+pip install -e .
