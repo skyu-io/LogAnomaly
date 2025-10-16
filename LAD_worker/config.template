@@ -1,0 +1,12 @@
+# Skyu API Configuration Template
+# Copy this file to .env in your project root and update the values
+
+# Base API URL (optional - will use default if not set)
+# The script will append the endpoint path automatically
+SKYU_BASE_URL=https://api.skyu.io
+
+# Organization ID (optional - can be provided via --orgid argument instead)
+SKYU_ORG_ID=org_6de1b366-9da6-4d55-b363-f5a2c4382016
+
+# Token should be provided via --token argument or interactive prompt for security
+# SKYU_TOKEN=  # DO NOT PUT TOKENS HERE - use --token argument instead
