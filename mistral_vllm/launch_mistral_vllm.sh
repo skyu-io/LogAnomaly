@@ -2,7 +2,8 @@
 # launch_mistral_vllm.sh
 # Spin up a (Dedicated Instance or Dedicated Host) EC2 and auto-run a Mistral vLLM server on port 8000.
 # Requires: AWS CLI v2, jq. Assumes a GPU-ready AMI (e.g., AWS DLAMI/NVIDIA) with drivers + nvidia-docker.
-set -euo pipefail
+# Be strict; fall back if pipefail unsupported (some minimal bash environments)
+set -euo pipefail 2>/dev/null || set -eu
 
 # --- Usage & config -----------------------------------------------------------
 ENV_FILE="${1:-mistral.env}"

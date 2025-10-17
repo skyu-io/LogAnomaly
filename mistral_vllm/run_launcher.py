@@ -44,7 +44,7 @@ def make_executable(path: Path) -> None:
 
 def run_launcher(
     env_file: os.PathLike | str = "mistral.env",
-    script_path: os.PathLike | str = "test.sh", #launch_mistral_vllm.sh
+    script_path: os.PathLike | str = "test.sh",
     *,
     extra_env: Optional[Dict[str, str]] = None,
     timeout_sec: Optional[int] = None,
@@ -73,8 +73,13 @@ def run_launcher(
     env_path = Path(env_file)
     sh_path = Path(script_path)
 
+    if not env_path.is_absolute():
+        env_path = Path(__file__).parent / env_path
     if not env_path.exists():
         raise FileNotFoundError(f"env file not found: {env_path}")
+      
+    if not sh_path.is_absolute():
+        sh_path = Path(__file__).parent / sh_path
     if not sh_path.exists():
         raise FileNotFoundError(f"script not found: {sh_path}")
 
@@ -85,7 +90,33 @@ def run_launcher(
         # Not fatal—will still run with 'bash <script>'
         pass
 
-    cmd = ["bash", str(sh_path), str(env_path)]  # portable across OSes
+    # Build a bash-friendly command on all platforms
+    def _detect_wsl() -> bool:
+        try:
+            out = subprocess.run(["bash", "-c", "uname -r"], capture_output=True, text=True)
+            return "microsoft" in (out.stdout + out.stderr).lower()
+        except Exception:
+            return False
+
+    def _to_bash_path(p: Path) -> str:
+        posix = p.resolve().as_posix()
+        if os.name == "nt":
+            # If we're actually invoking WSL bash, convert C:/... to /mnt/c/...
+            if _detect_wsl():
+                if len(posix) >= 2 and posix[1] == ":":
+                    drive = posix[0].lower()
+                    rest = posix[2:]  # starts with /
+                    return f"/mnt/{drive}{rest}"
+        return posix
+
+    sh_arg = _to_bash_path(sh_path)
+    env_arg = _to_bash_path(env_path)
+
+    # For debugging, you can uncomment:
+    # print(f"[run_launcher] Using bash script: {sh_arg}")
+    # print(f"[run_launcher] Using env file:   {env_arg}")
+
+    cmd = ["bash", sh_arg, env_arg]
 
     env = os.environ.copy()
     if extra_env:
