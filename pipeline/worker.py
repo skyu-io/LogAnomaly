@@ -9,6 +9,7 @@ sys.path.insert(0, str(parent_dir))
 from prefect import flow, get_run_logger, task
 from datetime import datetime
 from log_Injest.Ingest_cloudwatch_logs import fetch_cloudwatch_logs
+from yaml_extractor.yaml_config_fetcher import fetch_yaml_config
 
 @task
 def install_packages() -> None:
@@ -43,8 +44,18 @@ def execute_cloudwatch_log_ingestion() -> None:
 @flow
 def download_config_yaml() -> None:
     logger = get_run_logger()
-    logger.info("Fetch config YAML via curl from SkyU")
-    logger.info("Edit the yaml file with updated configs from mistral server")
+    logger.info("Fetch config YAML via SKY cone gitops repo")
+    res = fetch_yaml_config(
+        destination_config_dir="./config",
+        app_id="myservice",  # or None to always use common
+        # repo_url="https://github.com/skyu-io/oho-log-anomaly-skyu-gitops-446358f6.git",
+        repo_url="https://github.com/salindaFinsighture/oho-log-anomaly-skyu-gitops-clone",
+        config_root_rel="loganomaly/config",
+        reuse_local_repo=None,  # set to a local repo path to skip cloning
+        overwrite=True,
+        clean_destination_first=True,
+    )
+    logger.debug(f"copied={len(res.copied_files)} files → {res.destination}")
 
 @task
 def transform_log__to_validated_schema() -> None:
@@ -55,7 +66,7 @@ def transform_log__to_validated_schema() -> None:
 def prepare_prerequisite() -> None:
     logger = get_run_logger()
     logger.info("Preparing prerequisites: logs + config")
-    config_mistral_server()
+    # config_mistral_server()
     execute_cloudwatch_log_ingestion()
     download_config_yaml()
     logger.info("Prerequisites complete")
