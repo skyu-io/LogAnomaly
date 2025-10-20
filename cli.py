@@ -59,23 +59,30 @@ def cli(
     app_config.ENABLE_DEPENDENT_ANOMALY_FILTER = yaml_config.get('enable_dependent_anomaly_filter', app_config.ENABLE_DEPENDENT_ANOMALY_FILTER)
 
     # LLM config
-    llm_cfg = yaml_config.get('llm_config', {})
+    llm_cfg = yaml_config.get('llm', {})
+    app_config.LLM_PROVIDER = llm_cfg.get('provider', app_config.LLM_PROVIDER)
     app_config.LLM_ENDPOINT = llm_cfg.get('endpoint', app_config.LLM_ENDPOINT)
     app_config.LLM_MODEL = llm_cfg.get('model', app_config.LLM_MODEL)
     app_config.TIMEOUT = llm_cfg.get('timeout', app_config.TIMEOUT)
+    app_config.MAX_RETRIES = llm_cfg.get('max_retries', getattr(app_config, 'MAX_RETRIES', 3))
 
     app_config.ADDITIONAL_SECURITY_PATTERNS = yaml_config.get("additional_security_patterns", [])
     app_config.ADDITIONAL_RULE_BASED_PATTERNS = yaml_config.get("additional_rule_based_patterns", [])
 
+    # Detectors config
+    detectors_cfg = yaml_config.get('detectors', {})
+    
     # LOF config
-    app_config.ENABLE_LOF = enable_lof if enable_lof is not None else yaml_config.get("enable_lof", app_config.ENABLE_LOF)
-    app_config.LOF_N_NEIGHBORS = lof_n_neighbors or yaml_config.get("lof_n_neighbors", app_config.LOF_N_NEIGHBORS)
-    app_config.LOF_CONTAMINATION = lof_contamination or yaml_config.get("lof_contamination", app_config.LOF_CONTAMINATION)
+    lof_cfg = detectors_cfg.get('lof', {})
+    app_config.ENABLE_LOF = enable_lof if enable_lof is not None else lof_cfg.get('enabled', yaml_config.get("enable_lof", app_config.ENABLE_LOF))
+    app_config.LOF_N_NEIGHBORS = lof_n_neighbors or lof_cfg.get('neighbors', yaml_config.get("lof_n_neighbors", app_config.LOF_N_NEIGHBORS))
+    app_config.LOF_CONTAMINATION = lof_contamination or lof_cfg.get('contamination', yaml_config.get("lof_contamination", app_config.LOF_CONTAMINATION))
 
     # Rolling Window config
-    app_config.ENABLE_ROLLING_WINDOW = enable_rolling_window if enable_rolling_window is not None else yaml_config.get("enable_rolling_window", app_config.ENABLE_ROLLING_WINDOW)
-    app_config.ROLLING_WINDOW_SIZE = rolling_window_size or yaml_config.get("rolling_window_size", app_config.ROLLING_WINDOW_SIZE)
-    app_config.ROLLING_WINDOW_THRESHOLD = rolling_window_threshold or yaml_config.get("rolling_window_threshold", app_config.ROLLING_WINDOW_THRESHOLD)
+    rolling_window_cfg = detectors_cfg.get('rolling_window', {})
+    app_config.ENABLE_ROLLING_WINDOW = enable_rolling_window if enable_rolling_window is not None else rolling_window_cfg.get('enabled', yaml_config.get("enable_rolling_window", app_config.ENABLE_ROLLING_WINDOW))
+    app_config.ROLLING_WINDOW_SIZE = rolling_window_size or rolling_window_cfg.get('window_size', yaml_config.get("rolling_window_size", app_config.ROLLING_WINDOW_SIZE))
+    app_config.ROLLING_WINDOW_THRESHOLD = rolling_window_threshold or rolling_window_cfg.get('repetition_threshold', yaml_config.get("rolling_window_threshold", app_config.ROLLING_WINDOW_THRESHOLD))
 
     # === Run ===
     click.echo(f"🔍 Starting analysis on → {input}")

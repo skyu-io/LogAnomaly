@@ -387,8 +387,9 @@ def process_file(filepath):
             llm_stats = {}
 
     # Remove logs that LLM classified as non-anomalous or uncertain
-    normal_indices = anomalies_df[anomalies_df["classification"].isin(["Routine", "Normal", "unknown"])].index
-    anomalies_df.loc[normal_indices, "is_anomaly"] = 0
+    if "classification" in anomalies_df.columns:
+        normal_indices = anomalies_df[anomalies_df["classification"].isin(["Routine", "Normal", "unknown"])].index
+        anomalies_df.loc[normal_indices, "is_anomaly"] = 0
 
     if not app_config.ENABLE_LLM:
         context_logs = []
