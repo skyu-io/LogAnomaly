@@ -26,8 +26,12 @@ from loganomaly.workflow import LogAnalysisWorkflow
 # Create a workflow with default steps
 workflow = LogAnalysisWorkflow({})
 
-# Process a log entry
-result = await workflow.execute("ERROR: Failed to connect to database: Connection refused")
+Clone and install:
+
+```bash
+git clone https://github.com/skyu-io/LogAnomaly.git
+cd loganomaly
+pip install -e .
 ```
 
 ### Advanced LLM Processing
@@ -255,8 +259,11 @@ If you encounter connection issues with Ollama:
 If you encounter memory issues with large log files:
 
 ```bash
-# Process logs in smaller batches
-loganomaly --input logs/ --output results --config config.yaml --batch-size 500
+git clone https://github.com/skyu-io/LogAnomaly.git
+cd loganomaly
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
 
 ## Installation
