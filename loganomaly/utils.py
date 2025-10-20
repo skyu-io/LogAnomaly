@@ -27,22 +27,22 @@ DEFAULT_RULE_BASED_PATTERNS = [
 
 def load_custom_patterns():
     """
-    Merge default patterns + additional patterns from YAML config.
+    Merge default rule & security patterns with additional patterns from config.
     """
     rule_patterns = DEFAULT_RULE_BASED_PATTERNS.copy()
     security_patterns = DEFAULT_SECURITY_PATTERNS.copy()
 
-    yaml_config = getattr(app_config, "YAML_CONFIG", {})
+    # Add additional patterns from config
+    extra_rules = getattr(app_config, "ADDITIONAL_RULE_BASED_PATTERNS", [])
+    extra_security = getattr(app_config, "ADDITIONAL_SECURITY_PATTERNS", [])
 
-    # Add rule patterns
-    extra_rules = yaml_config.get("rule_based_patterns", [])
     if extra_rules:
         rule_patterns.extend(extra_rules)
+        print(f"🔧 Loaded {len(extra_rules)} additional rule patterns")
 
-    # Add security patterns
-    extra_security = yaml_config.get("security_patterns", [])
     if extra_security:
         security_patterns.extend(extra_security)
+        print(f"🔐 Loaded {len(extra_security)} additional security patterns")
 
     return rule_patterns, security_patterns
 
@@ -131,29 +131,54 @@ def tag_label(label):
 
 def extract_tags(reply):
     try:
-        result = json.loads(reply)
-
-        label = result.get("classification", "Unknown")
-        reason = result.get("reason", "Unknown")
-        tags = result.get("tags", [])
-
-        if "Routine" in tags or "Non-Anomaly" in tags:
-            label = "Routine"
-        elif "Possible Security Threat" in tags:
-            label = "Possible Security Threat"
-        elif "Operational Error" in tags:
-            label = "Operational Error"
-        elif "Sensitive Information Leak" in tags:
-            label = "Sensitive Information Leak"
-        elif "Configuration Issue" in tags:
-            label = "Configuration Issue"
+        # First try to parse as JSON (in case the LLM returns JSON)
+        try:
+            result = json.loads(reply)
+            label = result.get("classification", "Unknown")
+            reason = result.get("reason", "Unknown")
+            tags = result.get("tags", [])
+            
+            # Return early if we successfully parsed JSON
+            return label, short_reason(reason), tags
+        except json.JSONDecodeError:
+            # Not JSON, continue with text parsing
+            pass
+        
+        # Extract classification using regex
+        classification_match = re.search(r"(?i)classification:\s*(\w+)", reply)
+        label = classification_match.group(1).strip() if classification_match else "Unknown"
+        
+        # Convert classification to standard format
+        if label.lower() == "normal":
+            label = "Normal"
+        elif label.lower() in ["anomaly", "anomalous"]:
+            label = "Anomaly"
+        elif label.lower() == "error":
+            label = "Error"
+            
+        # Extract reason using regex
+        reason_match = re.search(r"(?i)reason:\s*(.+?)(?=\n|tags:|$)", reply)
+        reason = reason_match.group(1).strip() if reason_match else reply
+        
+        # Extract tags using regex
+        tags_match = re.search(r"(?i)tags:\s*(.+?)(?=\n|$)", reply)
+        if tags_match:
+            tags_str = tags_match.group(1).strip()
+            tags = [tag.strip() for tag in tags_str.split(",") if tag.strip()]
         else:
-            label = "Unknown"
-
+            tags = ["Unknown"]
+            
+        # Apply tag-based classification logic
+        if "routine" in [t.lower() for t in tags] or "non-anomaly" in [t.lower() for t in tags]:
+            label = "Normal"
+        elif any(security in [t.lower() for t in tags] for security in ["security", "sensitive", "leak"]):
+            label = "Security"
+            
         return label, short_reason(reason), tags
-
-    except Exception:
-        return "Unknown", "Could not parse", ["Unknown"]
+        
+    except Exception as e:
+        print(f"Error extracting tags: {str(e)}")
+        return "Unknown", reply, ["Unknown"]
 
 
 def is_non_anomalous(log_line, filename, non_anomalies_folder=None):

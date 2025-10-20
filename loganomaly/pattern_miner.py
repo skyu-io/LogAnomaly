@@ -1,6 +1,7 @@
 import os
 import configparser
 import shutil
+import logging
 from pathlib import Path
 from tqdm import tqdm
 from drain3 import TemplateMiner
@@ -41,6 +42,9 @@ def setup_drain_config():
 
 
 def init_drain():
+    # Set drain3 logger to ERROR level to reduce output
+    logging.getLogger("drain3").setLevel(logging.ERROR)
+    
     setup_drain_config()
     persistence = FilePersistence(str(app_config.DRAIN3_STATE_PATH))
     miner = TemplateMiner(persistence)
