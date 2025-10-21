@@ -1,0 +1,152 @@
+[
+  {
+    "@timestamp": "2025-10-07 16:27:15.952",
+    "@message": {
+      "time": "2025-10-07T16:27:15.952000Z",
+      "stream": "stdout",
+      "_p": "F",
+      "log": "INIT_START Runtime Version: nodejs:22.v57\tRuntime Version ARN: arn:aws:lambda:us-east-1::runtime:c26bb69645d4903db137fbe4772e8c23f8ab3da32c056db34676ceca1c4e17f2",
+      "data": {},
+      "kubernetes": {
+        "pod_name": "lambda-[$LATEST]ca314ccdb75b4e4a8e805e301776f73d",
+        "pod_id": "39245623807914451143735726866534534678910701987380199424",
+        "docker_id": "39245623807914451143735726866534534678910701987380199424"
+      }
+    }
+  },
+  {
+    "@timestamp": "2025-10-07 16:27:16.113",
+    "@message": {
+      "time": "2025-10-07T16:27:16.113000Z",
+      "stream": "stdout",
+      "_p": "F",
+      "log": "2025-10-07T10:57:16.113Z\tundefined\tERROR\t(node:2) Warning: Failed to load the ES module: /var/task/index.js. Make sure to set \"type\": \"module\" in the nearest package.json file or use the .mjs extension.\n(Use `node --trace-warnings ...` to show where the warning was created)",
+      "data": {},
+      "kubernetes": {
+        "pod_name": "lambda-[$LATEST]ca314ccdb75b4e4a8e805e301776f73d",
+        "pod_id": "39245623811504871120699157192321785320807088189843046401",
+        "docker_id": "39245623811504871120699157192321785320807088189843046401"
+      }
+    }
+  },
+  {
+    "@timestamp": "2025-10-07 16:27:16.116",
+    "@message": {
+      "time": "2025-10-07T16:27:16.116000Z",
+      "stream": "stdout",
+      "_p": "F",
+      "log": "2025-10-07T10:57:16.116Z\tundefined\tERROR\tUncaught Exception \t{\"errorType\":\"Runtime.UserCodeSyntaxError\",\"errorMessage\":\"SyntaxError: Unexpected token 'export'\",\"stack\":[\"Runtime.UserCodeSyntaxError: SyntaxError: Unexpected token 'export'\",\"    at _loadUserApp (file:///var/runtime/index.mjs:1189:17)\",\"    at async UserFunction.js.module.exports.load (file:///var/runtime/index.mjs:1235:21)\",\"    at async start (file:///var/runtime/index.mjs:1454:23)\",\"    at async file:///var/runtime/index.mjs:1464:1\"]}",
+      "data": {},
+      "kubernetes": {
+        "pod_name": "lambda-[$LATEST]ca314ccdb75b4e4a8e805e301776f73d",
+        "pod_id": "39245623811571773356294749061746392475625033274360987650",
+        "docker_id": "39245623811571773356294749061746392475625033274360987650"
+      }
+    }
+  },
+  {
+    "@timestamp": "2025-10-07 16:27:16.131",
+    "@message": {
+      "time": "2025-10-07T16:27:16.131000Z",
+      "stream": "stdout",
+      "_p": "F",
+      "log": "INIT_REPORT Init Duration: 179.22 ms\tPhase: init\tStatus: error\tError Type: Runtime.UserCodeSyntaxError",
+      "data": {},
+      "kubernetes": {
+        "pod_name": "lambda-[$LATEST]ca314ccdb75b4e4a8e805e301776f73d",
+        "pod_id": "39245623811906284534272708408901951058086584783952281600",
+        "docker_id": "39245623811906284534272708408901951058086584783952281600"
+      }
+    }
+  },
+  {
+    "@timestamp": "2025-10-07 16:27:16.214",
+    "@message": {
+      "time": "2025-10-07T16:27:16.214000Z",
+      "stream": "stdout",
+      "_p": "F",
+      "log": "2025-10-07T10:57:16.214Z\tundefined\tERROR\t(node:2) Warning: Failed to load the ES module: /var/task/index.js. Make sure to set \"type\": \"module\" in the nearest package.json file or use the .mjs extension.\n(Use `node --trace-warnings ...` to show where the warning was created)",
+      "data": {},
+      "kubernetes": {
+        "pod_name": "lambda-[$LATEST]ca314ccdb75b4e4a8e805e301776f73d",
+        "pod_id": "39245623813757246385750750129649415674716398788948656129",
+        "docker_id": "39245623813757246385750750129649415674716398788948656129"
+      }
+    }
+  },
+  {
+    "@timestamp": "2025-10-07 16:27:16.215",
+    "@message": {
+      "time": "2025-10-07T16:27:16.215000Z",
+      "stream": "stdout",
+      "_p": "F",
+      "log": "2025-10-07T10:57:16.215Z\tundefined\tERROR\tUncaught Exception \t{\"errorType\":\"Runtime.UserCodeSyntaxError\",\"errorMessage\":\"SyntaxError: Unexpected token 'export'\",\"stack\":[\"Runtime.UserCodeSyntaxError: SyntaxError: Unexpected token 'export'\",\"    at _loadUserApp (file:///var/runtime/index.mjs:1189:17)\",\"    at async UserFunction.js.module.exports.load (file:///var/runtime/index.mjs:1235:21)\",\"    at async start (file:///var/runtime/index.mjs:1454:23)\",\"    at async file:///var/runtime/index.mjs:1464:1\"]}",
+      "data": {},
+      "kubernetes": {
+        "pod_name": "lambda-[$LATEST]ca314ccdb75b4e4a8e805e301776f73d",
+        "pod_id": "39245623813779547130949280752790951392989047150454636546",
+        "docker_id": "39245623813779547130949280752790951392989047150454636546"
+      }
+    }
+  },
+  {
+    "@timestamp": "2025-10-07 16:27:16.230",
+    "@message": {
+      "time": "2025-10-07T16:27:16.230000Z",
+      "stream": "stdout",
+      "_p": "F",
+      "log": "INIT_REPORT Init Duration: 84.98 ms\tPhase: invoke\tStatus: error\tError Type: Runtime.UserCodeSyntaxError",
+      "data": {},
+      "kubernetes": {
+        "pod_name": "lambda-[$LATEST]ca314ccdb75b4e4a8e805e301776f73d",
+        "pod_id": "39245623814114058308927240099913987167078772573044342787",
+        "docker_id": "39245623814114058308927240099913987167078772573044342787"
+      }
+    }
+  },
+  {
+    "@timestamp": "2025-10-07 16:27:16.230",
+    "@message": {
+      "time": "2025-10-07T16:27:16.230000Z",
+      "stream": "stdout",
+      "_p": "F",
+      "log": "START RequestId: 73603822-3d2c-45de-b64a-de5f9f821deb Version: $LATEST",
+      "data": {},
+      "kubernetes": {
+        "pod_name": "lambda-[$LATEST]ca314ccdb75b4e4a8e805e301776f73d",
+        "pod_id": "39245623814114058308927240099913987167078772573044342788",
+        "docker_id": "39245623814114058308927240099913987167078772573044342788"
+      }
+    }
+  },
+  {
+    "@timestamp": "2025-10-07 16:27:16.235",
+    "@message": {
+      "time": "2025-10-07T16:27:16.235000Z",
+      "stream": "stdout",
+      "_p": "F",
+      "log": "END RequestId: 73603822-3d2c-45de-b64a-de5f9f821deb",
+      "data": {},
+      "kubernetes": {
+        "pod_name": "lambda-[$LATEST]ca314ccdb75b4e4a8e805e301776f73d",
+        "pod_id": "39245623814225562034919893215621665758442014380574244869",
+        "docker_id": "39245623814225562034919893215621665758442014380574244869"
+      }
+    }
+  },
+  {
+    "@timestamp": "2025-10-07 16:27:16.235",
+    "@message": {
+      "time": "2025-10-07T16:27:16.235000Z",
+      "stream": "stdout",
+      "_p": "F",
+      "log": "REPORT RequestId: 73603822-3d2c-45de-b64a-de5f9f821deb\tDuration: 94.11 ms\tBilled Duration: 95 ms\tMemory Size: 128 MB\tMax Memory Used: 75 MB\tStatus: error\tError Type: Runtime.UserCodeSyntaxError",
+      "data": {},
+      "kubernetes": {
+        "pod_name": "lambda-[$LATEST]ca314ccdb75b4e4a8e805e301776f73d",
+        "pod_id": "39245623814225562034919893215621665758442014380574244870",
+        "docker_id": "39245623814225562034919893215621665758442014380574244870"
+      }
+    }
+  }
+]

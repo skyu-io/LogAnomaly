@@ -1,0 +1,17 @@
+{
+  "region": "us-east-1",
+  "startISO": "2025-10-06T00:00:00Z",
+  "endISO": "2025-10-07T23:59:59Z",
+  "jobs": [
+    {
+      "logGroup": "/aws/lambda/musatest1",
+      "outputName": "temp/lambda-app0.json",
+      "finalOutput": "test_data/lambda-app0.json"
+    },
+    {
+      "logGroup": "/aws/lambda/cloudzero-connected-account-Disc-DiscoveryFunction-b2kdydG5QuEX",
+      "outputName": "temp/lambda-app1.json",
+      "finalOutput": "test_data/lambda-app1.json"
+    }
+  ]
+}
