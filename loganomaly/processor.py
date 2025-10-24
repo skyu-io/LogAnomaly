@@ -11,9 +11,9 @@ import re
 
 from loganomaly import config as app_config
 from loganomaly.utils import (
-    tag_label, summarize_log_levels, is_non_anomalous,
+    summarize_log_levels, is_non_anomalous,
     find_security_leaks, summarize_tags, rule_based_classification,
-    redact_security_leaks, load_custom_patterns
+    redact_security_leaks, load_custom_patterns, evaluate_behavioral_rules
 )
 from loganomaly.pattern_miner import mine_templates
 from loganomaly.detectors.anomaly_detector import detect_knn_anomalies as knn_detect
@@ -21,11 +21,13 @@ from loganomaly.detectors.lof_detector import detect_anomalies_lof
 from loganomaly.detectors.rolling_window_detector import rolling_window_chunking
 from loganomaly.llm_classifier import classify_anomalies, apply_dependent_anomaly_filter
 
+
 # === Load dynamic patterns ===
 custom_rule_patterns, custom_security_patterns = load_custom_patterns()
 
 
 def load_logs(filepath):
+    import re
     filename = os.path.basename(filepath)
     log_lines = []
 
@@ -34,7 +36,7 @@ def load_logs(filepath):
             with open(filepath, "r") as f:
                 data = json.load(f)
                 for record in data:
-                    # Extract message from various possible fields
+                    # --- Extract message ---
                     message = ""
                     if "@message" in record and isinstance(record["@message"], dict):
                         message = record["@message"].get("log", "").strip()
@@ -44,21 +46,66 @@ def load_logs(filepath):
                         message = record["log"].strip() if isinstance(record["log"], str) else ""
                     elif "@message" in record and isinstance(record["@message"], str):
                         message = record["@message"].strip()
-                    
+
+                    # --- Extract timestamp ---
+                    timestamp = ""
+                    for field in ["@timestamp", "timestamp", "time", "@time", "datetime", "date"]:
+                        if field in record and record[field]:
+                            timestamp = str(record[field])
+                            break
+
+                    # --- Extract metadata ---
+                    user = record.get("user") or record.get("username") or record.get("user_id") or record.get("actor")
+                    email = record.get("email") or record.get("user_email")
+                    org = record.get("organization_id") or record.get("org_id") or record.get("tenant")
+                    application = record.get("application") or record.get("app") or record.get("service")
+                    ip = record.get("ip") or record.get("source_ip")
+
+                    # --- NEW: Extract from inner JSON message if message contains JSON ---
+                    if not user or not email or not org:
+                        try:
+                            inner = json.loads(message)
+                            if isinstance(inner, dict):
+                                user = user or inner.get("user") or inner.get("username")
+                                email = email or inner.get("email")
+                                org = org or inner.get("organization_id") or inner.get("org_id")
+                                ip = ip or inner.get("ip")
+                                application = application or inner.get("application")
+                                # some CloudWatch put the log text inside 'log'
+                                message = inner.get("log", message)
+                        except Exception:
+                            pass
+
+                    # --- NEW: Regex extraction from text ---
                     if message:
-                        # Extract timestamp from various possible fields
-                        timestamp = ""
-                        timestamp_fields = ["@timestamp", "timestamp", "time", "@time", "datetime", "date"]
-                        for field in timestamp_fields:
-                            if field in record and record[field]:
-                                timestamp = str(record[field])
-                                break
-                        
+                        if not email:
+                            m = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', message)
+                            email = m.group(0) if m else None
+
+                        if not user:
+                            m = re.search(r'user[:=]\s*([^\s,]+)', message, re.IGNORECASE)
+                            user = m.group(1) if m else None
+
+                        if not org:
+                            m = re.search(r'org(?:anization)?_?id[:=]\s*([^\s,]+)', message, re.IGNORECASE)
+                            org = m.group(1) if m else None
+
+                        if not ip:
+                            m = re.search(r'IP[:=]\s*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)', message)
+                            ip = m.group(1) if m else None
+
+                    if message:
                         log_lines.append({
                             "timestamp": timestamp,
                             "log": message,
+                            "user": user,
+                            "email": email,
+                            "organization_id": org,
+                            "ip": ip,
+                            "application": application,
                             "source_file": filename
                         })
+
         else:
             with open(filepath, "r") as f:
                 for line in f:
@@ -68,9 +115,20 @@ def load_logs(filepath):
                     parts = line.split(" ", 1)
                     timestamp = parts[0] if len(parts) > 1 else ""
                     log_msg = parts[1] if len(parts) > 1 else parts[0]
+
+                    # --- Regex extraction for plain logs too ---
+                    user = re.search(r'user[:=]\s*([^\s,]+)', log_msg, re.IGNORECASE)
+                    email = re.search(r'[\w\.-]+@[\w\.-]+\.\w+', log_msg)
+                    org = re.search(r'org(?:anization)?_?id[:=]\s*([^\s,]+)', log_msg, re.IGNORECASE)
+                    ip = re.search(r'IP[:=]\s*([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)', log_msg)
+
                     log_lines.append({
                         "timestamp": timestamp,
                         "log": log_msg,
+                        "user": user.group(1) if user else None,
+                        "email": email.group(0) if email else None,
+                        "organization_id": org.group(1) if org else None,
+                        "ip": ip.group(1) if ip else None,
                         "source_file": filename
                     })
 
@@ -276,6 +334,23 @@ def process_file(filepath):
     if df is None or len(df) == 0:
         return
 
+# === DEBUG: Check what fields are available ===
+    print(f"📊 DataFrame columns: {df.columns.tolist()}")
+    if len(df) > 0:
+        print(f"📋 Sample row fields:")
+        sample_row = df.iloc[0]
+        for col in df.columns:
+            print(f"   - {col}: {sample_row[col]}")
+    
+    # Check if behavioral rule fields exist
+    behavioral_fields = ['user', 'email', 'organization_id', 'application']
+    missing_fields = [field for field in behavioral_fields if field not in df.columns]
+    if missing_fields:
+        print(f"⚠️ Missing fields for behavioral rules: {missing_fields}")
+    else:
+        print(f"✅ All behavioral rule fields present")
+
+    
     df = mine_templates(df)
 
     # Always calculate volume stats, even if empty
@@ -406,10 +481,88 @@ def process_file(filepath):
 
     df["log"] = df["log"].apply(redact_security_leaks)
 
-    final_anomalies_df = pd.concat([
-        df[df["is_rule_based"] == True],
-        anomalies_df[anomalies_df["is_anomaly"] == 1]  # Only include actual anomalies
-    ], ignore_index=True)
+    # === Behavioral anomaly detection ===
+    behavioral_rules = getattr(app_config, "BEHAVIORAL_RULES", [])
+    if behavioral_rules:
+        print(f"🧠 Evaluating {len(behavioral_rules)} behavioral rules...")
+        behavioral_anomalies = evaluate_behavioral_rules(df, behavioral_rules)
+        
+        print(f"📊 Found {len(behavioral_anomalies)} behavioral anomalies")
+
+        if behavioral_anomalies:
+            for anomaly in behavioral_anomalies:
+                matched = anomaly.get("matched_indices", []) or []
+                rule_name = anomaly.get("rule", "Unknown")
+                reason = anomaly.get("reason", "Behavioral rule triggered")
+                
+                print(f"🔧 Applying behavioral rule '{rule_name}' to {len(matched)} log entries")
+                
+                for idx in matched:
+                    if idx in df.index:
+                        # Mark as behavioral anomaly
+                        df.loc[idx, "is_behavioral"] = True
+                        df.loc[idx, "behavioral_rule"] = rule_name
+                        df.loc[idx, "is_anomaly"] = 1
+                        df.loc[idx, "anomaly_source"] = "Behavioral"
+                        
+                        # Set classification and reason if not already set
+                        if "classification" not in df.columns or pd.isna(df.loc[idx, "classification"]):
+                            df.loc[idx, "classification"] = "Behavioral Anomaly"
+                        
+                        if "reason" not in df.columns or not df.loc[idx].get("reason"):
+                            df.loc[idx, "reason"] = reason
+                        
+                        # Set tag
+                        tag_str = rule_name.lower().replace(" ", "_")
+                        if "tag" not in df.columns or not isinstance(df.loc[idx, "tag"], list):
+                            df.loc[idx, "tag"] = ["behavioral_" + tag_str]
+                        else:
+                            df.loc[idx, "tag"].append("behavioral_" + tag_str)
+
+
+    # Create final anomalies dataframe by combining all types
+    anomaly_sources = []
+
+    # 1. Rule-based anomalies
+    if "is_rule_based" in df.columns:
+        rule_based_anomalies = df[df["is_rule_based"] == True]
+        if not rule_based_anomalies.empty:
+            anomaly_sources.append(rule_based_anomalies)
+
+    # 2. LLM/Statistical anomalies
+    if not anomalies_df.empty:
+        llm_anomalies = anomalies_df[anomalies_df["is_anomaly"] == 1]
+        if not llm_anomalies.empty:
+            anomaly_sources.append(llm_anomalies)
+
+    # 3. Behavioral anomalies - FIXED SECTION
+    if "is_behavioral" in df.columns:
+        behavioral_anomalies = df[df["is_behavioral"] == True].copy()  # ← Added .copy()
+        print(f"📊 Found {len(behavioral_anomalies)} behavioral anomalies to include in final output")
+        if not behavioral_anomalies.empty:
+            # Ensure behavioral anomalies have required columns
+            for col in ['classification', 'reason', 'tag']:
+                if col not in behavioral_anomalies.columns:
+                    behavioral_anomalies[col] = None
+            if 'anomaly_source' not in behavioral_anomalies.columns:
+                behavioral_anomalies['anomaly_source'] = 'Behavioral'
+            
+            # Ensure is_anomaly is set to 1 for behavioral anomalies
+            behavioral_anomalies['is_anomaly'] = 1  # ← Added this line
+            
+            anomaly_sources.append(behavioral_anomalies)
+
+    # Combine all anomaly types
+    if anomaly_sources:
+        final_anomalies_df = pd.concat(anomaly_sources, ignore_index=True)
+    else:
+        final_anomalies_df = pd.DataFrame()
+
+    print(f"🎯 Final anomalies breakdown:")
+    print(f"   - Rule-based: {len(rule_based_anomalies) if 'rule_based_anomalies' in locals() else 0}")
+    print(f"   - LLM/Statistical: {len(llm_anomalies) if 'llm_anomalies' in locals() else 0}")
+    print(f"   - Behavioral: {len(behavioral_anomalies) if 'behavioral_anomalies' in locals() else 0}")
+
 
     out_file = os.path.join(app_config.RESULTS_FOLDER, f"{os.path.splitext(filename)[0]}_anomalies.json")
     final_anomalies_df.to_json(out_file, orient="records", indent=2)
@@ -498,7 +651,12 @@ def process_file(filepath):
     }
 
     # Calculate SIEM-specific metrics
-    critical_anomalies = len(final_anomalies_df[final_anomalies_df["is_anomaly"] == 1])
+    # critical_anomalies = len(final_anomalies_df[final_anomalies_df["is_anomaly"] == 1])
+    if "is_anomaly" in final_anomalies_df.columns:
+        critical_anomalies = len(final_anomalies_df[final_anomalies_df["is_anomaly"] == 1])
+    else:
+        critical_anomalies = 0
+
     security_incidents = len(security_leaks) + int(rule_based_count)
     
     # Risk assessment

@@ -28,6 +28,7 @@ LOF_CONTAMINATION = 0.05  # Ratio of anomalies
 # === Rule & Security Pattern ===
 ADDITIONAL_SECURITY_PATTERNS = []
 ADDITIONAL_RULE_BASED_PATTERNS = []
+BEHAVIORAL_RULES = []
 
 # === Dependent Anomaly Filter ===
 ENABLE_DEPENDENT_ANOMALY_FILTER = True
