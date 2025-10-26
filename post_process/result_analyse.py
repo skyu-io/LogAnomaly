@@ -11,11 +11,6 @@ from prefect import get_run_logger  # keep if you’re running under Prefect
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
-
-# import your pure aggregation utils
-# from siem_aggregate import aggregate_directory
-# (If this handler lives in the same file, import locally instead.)
-
 def aggregate_directory(
     summaries_dir: str | Path,
     pattern: str = "*_summary.json",
@@ -180,39 +175,3 @@ def build_template_data(
     meta = _compute_subject_and_preheader(payload)
     payload.update(meta)
     return payload
-
-
-# def send_siem_alert_email(
-#     *,
-#     summaries_dir: str | Path,
-#     pattern: str = "*_summary.json",
-#     top_k: int = 10,
-#     max_reports: Optional[int] = None,
-
-# ) -> Tuple[int, str, Dict]:
-#     """
-#     High-level convenience handler:
-#       1) aggregates *_summary.json files,
-#       2) computes subject & preheader for your template,
-#       3) sends the email via SKYU Notifications.
-
-#     Returns (status_code, response_text, template_data_used).
-#     If dry_run=True, returns (0, "DRY_RUN", template_data) and does not call the service.
-#     """
-#     logger = get_run_logger()
-#     template_data = build_template_data(
-#         summaries_dir=summaries_dir,
-#         pattern=pattern,
-#         top_k=top_k,
-#         max_reports=max_reports,
-#     )
-
-#     # Optionally cap top_threat_indicators in the aggregate to keep emails short
-#     agg = template_data.get("aggregate") or {}
-#     if "top_threat_indicators" in agg and isinstance(agg["top_threat_indicators"], list):
-#         agg["top_threat_indicators"] = agg["top_threat_indicators"][:top_k]
-#         template_data["aggregate"] = agg
-
-    
-#     logger.info("[dry_run] would send SIEM email", extra={"template_data": template_data})
-#     return template_data

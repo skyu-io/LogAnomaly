@@ -111,60 +111,6 @@ def build_headers(
         "Authorization": f"Bearer {api_token}",
     }
 
-# ----- upload -----
-# def upload_folder_as_zip(
-#     folder_path: str | Path,
-#     *,
-#     api_url: str = API_URL,
-#     headers: Optional[Dict[str, str]] = None,
-#     provider: str = PROVIDER,
-#     resource_type: str,
-#     cloud_storage_path: str,
-#     zip_name: Optional[str] = None,
-#     timeout: tuple = (10, 180),
-#     ignore_globs: Optional[Iterable[str]] = None,
-#     session: Optional[requests.Session] = None,
-# ) -> requests.Response:
-#     """
-#     NOTE: resource_type and cloud_storage_path are required (passed from worker).
-#     """
-#     src = Path(folder_path).resolve()
-#     if headers is None:
-#         headers = {}
-#     headers = {k: v for k, v in headers.items() if k.lower() != "content-type"}
-#     print("headers")
-#     print(headers)
-
-#     sess = session or _build_session()
-
-#     temp_zip_path: Optional[Path] = None
-#     created_temp = False
-#     try:
-#         if src.is_file() and src.suffix.lower() == ".zip":
-#             zip_path = src
-#             presented_name = zip_name or src.name
-#         else:
-#             temp_zip_path = zip_folder_for_upload(src, ignore_globs=ignore_globs)
-#             created_temp = True
-#             presented_name = zip_name or f"{generate_ulid()}.zip"
-#             zip_path = temp_zip_path
-
-#         data = {
-#             "provider": provider,
-#             "resourceType": resource_type,
-#             "cloudStoragePath": cloud_storage_path,
-#         }
-#         with open(zip_path, "rb") as f:
-#             files = {"file": (presented_name, f, "application/zip")}
-#             return sess.post(api_url, headers=headers, data=data, files=files, timeout=timeout)
-#     finally:
-#         if created_temp and temp_zip_path and temp_zip_path.exists():
-#             try:
-#                 temp_zip_path.unlink()
-#             except Exception:
-#                 pass
-
-
 def upload_folder_as_zip(
     folder_path: str | Path,
     *,
