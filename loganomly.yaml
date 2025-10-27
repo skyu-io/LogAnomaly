@@ -5,6 +5,10 @@ top_n_llm: 10   # Max anomalies to classify using LLM
 max_log_lines: null  # Optional Compliance Mode (set a number if required)
 large_log_warning_threshold: 1000
 
+# === Behavioral Anomaly Detection ===
+enable_behavioral_detection: true  # Disabled by default
+behavioral_rules_file: client_a_config.yaml  # No rules file by default
+
 # === Statistical Detection ===
 enable_spam_detection: true
 spam_template_threshold: 0.8

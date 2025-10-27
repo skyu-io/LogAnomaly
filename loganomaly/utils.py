@@ -3,6 +3,7 @@ import re
 import json
 import tempfile
 import subprocess
+import yaml
 from collections import Counter
 from loganomaly import config as app_config
 from datetime import datetime, timedelta
@@ -394,3 +395,85 @@ def evaluate_behavioral_rules(df, behavioral_rules):
 
     return anomalies
 
+def extract_client_fields(df, client_config_file=None):
+    """
+    Extract client-specific fields based on external configuration.
+    Returns DataFrame with additional fields.
+    """
+    if not client_config_file or not os.path.exists(client_config_file):
+        return df
+    
+    try:
+        with open(client_config_file, 'r') as f:
+            client_config = yaml.safe_load(f)
+        
+        if client_config is None:
+            print(f"⚠️ Config file is empty: {client_config_file}")
+            return df
+        
+        field_configs = client_config.get('field_extraction', [])
+        
+        if not field_configs:
+            return df
+        
+        for field_config in field_configs:
+            field_name = field_config['name']
+            extractors = field_config.get('extractors', [])
+            regex_pattern = field_config.get('regex')
+            
+            # Initialize the field
+            df[field_name] = None
+            
+            # Extract from JSON fields if available
+            for record_idx, record in df.iterrows():
+                log_text = str(record['log']) if record['log'] else ""
+                
+                # Method 1: Try to parse log as JSON for structured extraction
+                try:
+                    log_data = json.loads(log_text)
+                    if isinstance(log_data, dict):
+                        for extractor in extractors:
+                            if extractor in log_data and log_data[extractor]:
+                                df.at[record_idx, field_name] = log_data[extractor]
+                                break
+                except:
+                    pass
+                
+                # Method 2: Try direct field names in the record (if it came from parsed JSON structure)
+                if pd.isna(df.at[record_idx, field_name]):
+                    for extractor in extractors:
+                        if extractor in record and not pd.isna(record[extractor]) and record[extractor]:
+                            df.at[record_idx, field_name] = record[extractor]
+                            break
+                
+                # Method 3: Regex extraction from log text
+                if pd.isna(df.at[record_idx, field_name]) and regex_pattern:
+                    match = re.search(regex_pattern, log_text, re.IGNORECASE)
+                    if match:
+                        # Try to extract capture group, otherwise use full match
+                        value = match.group(1) if match.lastindex and match.lastindex >= 1 else match.group(0)
+                        df.at[record_idx, field_name] = value
+        
+        print(f"✅ Extracted {len(field_configs)} client-specific fields from {client_config_file}")
+        return df
+        
+    except Exception as e:
+        print(f"❌ Failed to extract client fields: {e}")
+        return df
+
+
+
+def load_behavioral_rules(rules_file_path=None):
+    """Load behavioral rules from external YAML file."""
+    if not rules_file_path:
+        return []
+    
+    try:
+        with open(rules_file_path, 'r') as f:
+            config = yaml.safe_load(f)
+            behavioral_rules = config.get('behavioral_rules', [])
+            print(f"✅ Loaded {len(behavioral_rules)} behavioral rules from {rules_file_path}")
+            return behavioral_rules
+    except Exception as e:
+        print(f"❌ Failed to load behavioral rules from {rules_file_path}: {e}")
+        return []
