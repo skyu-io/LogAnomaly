@@ -1,0 +1,27 @@
+detectors:
+  lof:
+    enabled: true
+    neighbors: 20
+    contamination: 0.1
+
+  rolling_window:
+    enabled: true
+    window_size: 1000
+    repetition_threshold: 0.75
+
+llm:
+  provider: "ollama"
+  model: "mistral:instruct"
+  endpoint: "http://localhost:11434/api/generate"
+  timeout: 30
+  max_retries: 3
+
+# === Behavioral Detection ===
+# Enable behavioral anomaly detection
+enable_behavioral_detection: false
+
+# Path to client-specific config file containing field extraction and behavioral rules
+# This file should be in the same directory or provide an absolute path
+behavioral_rules_file: false
+#behavioral_rules_file: client_a_config.yaml
+

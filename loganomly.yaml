@@ -5,6 +5,10 @@ top_n_llm: 10   # Max anomalies to classify using LLM
 max_log_lines: null  # Optional Compliance Mode (set a number if required)
 large_log_warning_threshold: 1000
 
+# === Behavioral Anomaly Detection ===
+enable_behavioral_detection: true  # Disabled by default
+behavioral_rules_file: client_a_config.yaml  # No rules file by default
+
 # === Statistical Detection ===
 enable_spam_detection: true
 spam_template_threshold: 0.8
@@ -52,3 +56,61 @@ additional_rule_based_patterns:
   - name: "Disk Full"
     pattern: "no space left on device"
     reason: "Disk capacity exceeded"
+
+
+behavioral_rules:
+  # Repeated Failed Logins
+  - name: "Repeated Failed Logins"
+    type: "count"
+    group_by: "user"
+    window_minutes: 5
+    threshold: 1
+    pattern: "Failed login attempt.*password|Failed login attempt.*user not found"
+    reason: "Repeated failed login attempts."
+
+  # Cross-Organization API Usage
+  - name: "Cross-Organization API Usage"
+    type: "distinct_count"
+    group_by: "user"
+    field: "organization_id"
+    window_minutes: 60
+    threshold: 2
+    pattern: "GET /api/search|POST /api/search"
+    reason: "Same user accessed multiple organization IDs within an hour."
+
+  # Multiple Exports
+  - name: "Excessive Exports"
+    type: "count"
+    group_by: "user"
+    window_minutes: 60
+    threshold: 5
+    pattern: "export"
+    reason: "Multiple export actions detected by the same user within an hour."
+
+  # Password Reset Flood
+  - name: "Password Reset Flood"
+    type: "count"
+    group_by: "user"
+    window_minutes: 1440
+    threshold: 2
+    pattern: "password reset|forgot password"
+    reason: "Multiple password reset requests within a day."
+
+  # HTTP 4xx/5xx Spike
+  - name: "HTTP 4xx/5xx Spike"
+    type: "ratio"
+    group_by: "application"
+    window_minutes: 10
+    threshold_ratio: 0.4
+    pattern: "HTTP/1(?:\\.\\d)?\"\\s*(?:4\\d\\d|5\\d\\d)"
+    reason: "Spike in failed HTTP responses for this application."
+
+  - name: "API Rate Limit Exceeded"
+    type: "count"
+    group_by: "ip"
+    window_minutes: 10
+    threshold: 1
+    pattern: "Rate limit exceeded for IP|Rate limit exceeded for user"
+    reason: "User or IP hit API rate limit."
+
+

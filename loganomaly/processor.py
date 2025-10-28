@@ -11,9 +11,9 @@ import re
 
 from loganomaly import config as app_config
 from loganomaly.utils import (
-    tag_label, summarize_log_levels, is_non_anomalous,
+    summarize_log_levels, is_non_anomalous,
     find_security_leaks, summarize_tags, rule_based_classification,
-    redact_security_leaks, load_custom_patterns
+    redact_security_leaks, load_custom_patterns, evaluate_behavioral_rules
 )
 from loganomaly.pattern_miner import mine_templates
 from loganomaly.detectors.anomaly_detector import detect_knn_anomalies as knn_detect
@@ -21,9 +21,9 @@ from loganomaly.detectors.lof_detector import detect_anomalies_lof
 from loganomaly.detectors.rolling_window_detector import rolling_window_chunking
 from loganomaly.llm_classifier import classify_anomalies, apply_dependent_anomaly_filter
 
+
 # === Load dynamic patterns ===
 custom_rule_patterns, custom_security_patterns = load_custom_patterns()
-
 
 def load_logs(filepath):
     filename = os.path.basename(filepath)
@@ -276,6 +276,31 @@ def process_file(filepath):
     if df is None or len(df) == 0:
         return
 
+    # === DEBUG: Check what fields are available ===
+    print(f"📊 DataFrame columns: {df.columns.tolist()}")
+    if len(df) > 0:
+        print(f"📋 Sample row fields:")
+        sample_row = df.iloc[0]
+        for col in df.columns:
+            print(f"   - {col}: {sample_row[col]}")
+
+    # === Extract client-specific fields ===
+    from loganomaly.utils import extract_client_fields
+    
+    # Check if this file has a specific config in FILE_CONFIG_MAP
+    client_config_file = getattr(app_config, "CLIENT_CONFIG_FILE", None)
+    file_config_map = getattr(app_config, "FILE_CONFIG_MAP", {})
+    
+    if filename in file_config_map:
+        # Use per-file config
+        client_config_file = file_config_map[filename]
+        print(f"🎯 Using file-specific config for {filename}: {client_config_file}")
+    
+    if client_config_file:
+        df = extract_client_fields(df, client_config_file)
+        print(f"📊 New DataFrame columns after client extraction: {df.columns.tolist()}")
+
+    
     df = mine_templates(df)
 
     # Always calculate volume stats, even if empty
@@ -406,10 +431,98 @@ def process_file(filepath):
 
     df["log"] = df["log"].apply(redact_security_leaks)
 
-    final_anomalies_df = pd.concat([
-        df[df["is_rule_based"] == True],
-        anomalies_df[anomalies_df["is_anomaly"] == 1]  # Only include actual anomalies
-    ], ignore_index=True)
+    # === Behavioral anomaly detection ===
+    from loganomaly.utils import load_behavioral_rules
+    
+    # Load behavioral rules from inline config or external file
+    behavioral_rules = []
+    if getattr(app_config, "ENABLE_BEHAVIORAL_DETECTION", False):
+        # First, try to load from external file if specified
+        if getattr(app_config, "BEHAVIORAL_RULES_FILE", None):
+            behavioral_rules = load_behavioral_rules(app_config.BEHAVIORAL_RULES_FILE)
+        else:
+            # Fall back to inline behavioral rules from config
+            behavioral_rules = getattr(app_config, "BEHAVIORAL_RULES", [])
+    if behavioral_rules:
+        print(f"🧠 Evaluating {len(behavioral_rules)} behavioral rules...")
+        behavioral_anomalies = evaluate_behavioral_rules(df, behavioral_rules)
+        
+        print(f"📊 Found {len(behavioral_anomalies)} behavioral anomalies")
+
+        if behavioral_anomalies:
+            for anomaly in behavioral_anomalies:
+                matched = anomaly.get("matched_indices", []) or []
+                rule_name = anomaly.get("rule", "Unknown")
+                reason = anomaly.get("reason", "Behavioral rule triggered")
+                
+                print(f"🔧 Applying behavioral rule '{rule_name}' to {len(matched)} log entries")
+                
+                for idx in matched:
+                    if idx in df.index:
+                        # Mark as behavioral anomaly
+                        df.loc[idx, "is_behavioral"] = True
+                        df.loc[idx, "behavioral_rule"] = rule_name
+                        df.loc[idx, "is_anomaly"] = 1
+                        df.loc[idx, "anomaly_source"] = "Behavioral"
+                        
+                        # Set classification and reason if not already set
+                        if "classification" not in df.columns or pd.isna(df.loc[idx, "classification"]):
+                            df.loc[idx, "classification"] = "Behavioral Anomaly"
+                        
+                        if "reason" not in df.columns or not df.loc[idx].get("reason"):
+                            df.loc[idx, "reason"] = reason
+                        
+                        # Set tag
+                        tag_str = rule_name.lower().replace(" ", "_")
+                        if "tag" not in df.columns or not isinstance(df.loc[idx, "tag"], list):
+                            df.loc[idx, "tag"] = ["behavioral_" + tag_str]
+                        else:
+                            df.loc[idx, "tag"].append("behavioral_" + tag_str)
+
+
+    # Create final anomalies dataframe by combining all types
+    anomaly_sources = []
+
+    # 1. Rule-based anomalies
+    if "is_rule_based" in df.columns:
+        rule_based_anomalies = df[df["is_rule_based"] == True]
+        if not rule_based_anomalies.empty:
+            anomaly_sources.append(rule_based_anomalies)
+
+    # 2. LLM/Statistical anomalies
+    if not anomalies_df.empty:
+        llm_anomalies = anomalies_df[anomalies_df["is_anomaly"] == 1]
+        if not llm_anomalies.empty:
+            anomaly_sources.append(llm_anomalies)
+
+    # 3. Behavioral anomalies 
+    if "is_behavioral" in df.columns:
+        behavioral_anomalies = df[df["is_behavioral"] == True].copy()  # ← Added .copy()
+        print(f"📊 Found {len(behavioral_anomalies)} behavioral anomalies to include in final output")
+        if not behavioral_anomalies.empty:
+            # Ensure behavioral anomalies have required columns
+            for col in ['classification', 'reason', 'tag']:
+                if col not in behavioral_anomalies.columns:
+                    behavioral_anomalies[col] = None
+            if 'anomaly_source' not in behavioral_anomalies.columns:
+                behavioral_anomalies['anomaly_source'] = 'Behavioral'
+            
+            # Ensure is_anomaly is set to 1 for behavioral anomalies
+            behavioral_anomalies['is_anomaly'] = 1  # ← Added this line
+            
+            anomaly_sources.append(behavioral_anomalies)
+
+    # Combine all anomaly types
+    if anomaly_sources:
+        final_anomalies_df = pd.concat(anomaly_sources, ignore_index=True)
+    else:
+        final_anomalies_df = pd.DataFrame()
+
+    print(f"🎯 Final anomalies breakdown:")
+    print(f"   - Rule-based: {len(rule_based_anomalies) if 'rule_based_anomalies' in locals() else 0}")
+    print(f"   - LLM/Statistical: {len(llm_anomalies) if 'llm_anomalies' in locals() else 0}")
+    print(f"   - Behavioral: {len(behavioral_anomalies) if 'behavioral_anomalies' in locals() else 0}")
+
 
     out_file = os.path.join(app_config.RESULTS_FOLDER, f"{os.path.splitext(filename)[0]}_anomalies.json")
     final_anomalies_df.to_json(out_file, orient="records", indent=2)
@@ -498,7 +611,12 @@ def process_file(filepath):
     }
 
     # Calculate SIEM-specific metrics
-    critical_anomalies = len(final_anomalies_df[final_anomalies_df["is_anomaly"] == 1])
+    # critical_anomalies = len(final_anomalies_df[final_anomalies_df["is_anomaly"] == 1])
+    if "is_anomaly" in final_anomalies_df.columns:
+        critical_anomalies = len(final_anomalies_df[final_anomalies_df["is_anomaly"] == 1])
+    else:
+        critical_anomalies = 0
+
     security_incidents = len(security_leaks) + int(rule_based_count)
     
     # Risk assessment
