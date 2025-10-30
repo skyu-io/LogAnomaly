@@ -11,8 +11,6 @@ from loganomaly import config as app_config
 @click.option('--input', '-i', type=click.Path(exists=True), required=True, help='Input folder containing log files.')
 @click.option('--output', '-o', type=click.Path(), default='./results', help='Folder to save results.')
 @click.option('--config', '-c', type=click.Path(exists=True), help='Configuration file (e.g., config.yaml, client_a_config.yaml).')
-@click.option('--client-config', '-C', type=click.Path(exists=True), help='Optional client-specific YAML (field extraction / behavioral rules).')
-@click.option('--file-config-map', type=str, help='Optional JSON mapping: {"filename.json": "config_file.yaml"} to use different configs per file.')
 @click.option('--max-logs', type=int, help='Maximum number of log lines to process.')
 @click.option('--disable-llm', is_flag=True, help='Disable LLM classification step.')
 @click.option('--summary-only', is_flag=True, help='Only print summary without saving anomaly details.')
@@ -26,9 +24,11 @@ from loganomaly import config as app_config
 @click.option('--enable-rolling-window', is_flag=True, default=None, help='Enable Rolling Window Flood Detection.')
 @click.option('--rolling-window-size', type=int, default=None, help='Rolling window size.')
 @click.option('--rolling-window-threshold', type=float, default=None, help='Flood detection threshold in window.')
+@click.option('--file-config-map', type=str, help='JSON mapping of input files to their specific config files.')
 def cli(
-    input, output, config, client_config, file_config_map, max_logs, disable_llm, summary_only, llm, compliance_mode, verbose, show_results,
-    enable_lof, lof_n_neighbors, lof_contamination, enable_rolling_window, rolling_window_size, rolling_window_threshold
+    input, output, config, max_logs, disable_llm, summary_only, llm, compliance_mode, verbose, show_results,
+    enable_lof, lof_n_neighbors, lof_contamination, enable_rolling_window, rolling_window_size, rolling_window_threshold,
+    file_config_map
 ):
     """
     🚀 LogAnomaly - Semantic, Statistical & Rule-Based Log Anomaly Detector
@@ -41,6 +41,18 @@ def cli(
             yaml_config = yaml.safe_load(f)
         app_config.YAML_CONFIG = yaml_config  # Store in config
         click.echo(f"📄 Loaded config: {config}")
+    
+    # Load file-config mapping if provided
+    if file_config_map:
+        try:
+            app_config.FILE_CONFIG_MAP = json.loads(file_config_map)
+            click.echo(f"📄 Loaded file-config mapping for {len(app_config.FILE_CONFIG_MAP)} files")
+        except json.JSONDecodeError as e:
+            click.echo(f"❌ Error parsing file-config-map JSON: {e}")
+            return
+        except Exception as e:
+            click.echo(f"❌ Unexpected error processing file-config-map: {e}")
+            return
 
     # === Merge CLI + YAML + Defaults ===
     app_config.INPUT_FOLDER = input
@@ -87,23 +99,6 @@ def cli(
     # Client-specific field extraction config
     # This is read from the behavioral_rules_file (which contains field_extraction rules)
     app_config.CLIENT_CONFIG_FILE = app_config.BEHAVIORAL_RULES_FILE if app_config.BEHAVIORAL_RULES_FILE else None
-
-    # CLI override for client config (explicitly passed)
-    if client_config:
-        app_config.CLIENT_CONFIG_FILE = client_config
-        app_config.BEHAVIORAL_RULES_FILE = client_config
-        click.echo(f"📄 Using client config from CLI: {client_config}")
-    
-    # File-based config mapping (JSON string: {"file.json": "config.yaml"})
-    FILE_CONFIG_MAP = {}
-    if file_config_map:
-        try:
-            FILE_CONFIG_MAP = json.loads(file_config_map)
-            click.echo(f"📄 File config mapping: {FILE_CONFIG_MAP}")
-        except json.JSONDecodeError:
-            click.echo(f"⚠️ Invalid JSON in file-config-map, ignoring")
-            FILE_CONFIG_MAP = {}
-    app_config.FILE_CONFIG_MAP = FILE_CONFIG_MAP
 
     # Detectors config
     detectors_cfg = yaml_config.get('detectors', {})

@@ -30,11 +30,12 @@ ADDITIONAL_SECURITY_PATTERNS = []
 ADDITIONAL_RULE_BASED_PATTERNS = []
 BEHAVIORAL_RULES = []
 
-# === Behavioral Detection & Client Config ===
+# === Behavioral Detection Config ===
 ENABLE_BEHAVIORAL_DETECTION = False
 BEHAVIORAL_RULES_FILE = None
+
+# === Client-Specific Field Extraction Config ===
 CLIENT_CONFIG_FILE = None
-FILE_CONFIG_MAP = {}  # Maps filename to config file: {"app.log": "config.yaml"}
 
 # === Dependent Anomaly Filter ===
 ENABLE_DEPENDENT_ANOMALY_FILTER = True
