@@ -31,7 +31,7 @@ ADDITIONAL_RULE_BASED_PATTERNS = []
 BEHAVIORAL_RULES = []
 
 # === Behavioral Detection Config ===
-ENABLE_BEHAVIORAL_DETECTION = True
+ENABLE_BEHAVIORAL_DETECTION = False
 BEHAVIORAL_RULES_FILE = None
 
 # === Client-Specific Field Extraction Config ===
