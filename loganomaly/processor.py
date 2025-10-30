@@ -300,6 +300,11 @@ def process_file(filepath):
         df = extract_client_fields(df, client_config_file)
         print(f"📊 New DataFrame columns after client extraction: {df.columns.tolist()}")
 
+    # Initialize behavioral detection columns
+    if 'is_behavioral' not in df.columns:
+        df['is_behavioral'] = False
+    if 'behavioral_rule' not in df.columns:
+        df['behavioral_rule'] = None
     
     df = mine_templates(df)
 
@@ -437,8 +442,11 @@ def process_file(filepath):
     # Load behavioral rules from inline config or external file
     behavioral_rules = []
     if getattr(app_config, "ENABLE_BEHAVIORAL_DETECTION", False):
-        # First, try to load from external file if specified
-        if getattr(app_config, "BEHAVIORAL_RULES_FILE", None):
+        # First, try to load from per-file config (file-config-map)
+        if client_config_file and os.path.exists(client_config_file):
+            behavioral_rules = load_behavioral_rules(client_config_file)
+        # Second, try global behavioral rules file
+        elif getattr(app_config, "BEHAVIORAL_RULES_FILE", None):
             behavioral_rules = load_behavioral_rules(app_config.BEHAVIORAL_RULES_FILE)
         else:
             # Fall back to inline behavioral rules from config
