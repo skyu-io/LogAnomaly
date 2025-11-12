@@ -298,7 +298,14 @@ def evaluate_behavioral_rules(df, behavioral_rules):
             # sort for sliding window
             g = group_df.sort_values("timestamp").reset_index()
             timestamps = g["timestamp"].tolist()
+            
+            print(f"\n🔍 Evaluating rule: {name}")
+            print(f"Group by: {group_by}, Group value: {group_key}")
+            print(f"Log entries in group: {len(g)}")
+            print(f"Pattern matching: {pattern}")
+            
             if rtype == "count":
+                print(f"Looking for {threshold} occurrences within {window_minutes} minutes")
                 # sliding window count: for each event, count events within window ending at that timestamp
                 window_td = timedelta(minutes=window_minutes)
                 left = 0
@@ -309,8 +316,10 @@ def evaluate_behavioral_rules(df, behavioral_rules):
                     while left <= i and timestamps[left] < ts - window_td:
                         left += 1
                     cnt = i - left + 1
+                    print(f"Window from {timestamps[left]} to {ts}: Found {cnt} events")
                     if threshold is not None and cnt >= threshold:
                         matched_indices = g.loc[left:i, "index"].tolist()
+                        print(f"🎯 Threshold reached! Count: {cnt} >= {threshold}")
                         anomalies.append({
                             "rule": name,
                             "group": group_key,
@@ -453,6 +462,7 @@ def extract_client_fields(df, client_config_file=None):
                         # Try to extract capture group, otherwise use full match
                         value = match.group(1) if match.lastindex and match.lastindex >= 1 else match.group(0)
                         df.at[record_idx, field_name] = value
+                        print(f"📌 Extracted {field_name}: {value} from log: {log_text[:100]}...")
         
         print(f"✅ Extracted {len(field_configs)} client-specific fields from {client_config_file}")
         return df
