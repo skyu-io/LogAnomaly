@@ -477,7 +477,9 @@ def process_file(filepath):
                         if "classification" not in df.columns or pd.isna(df.loc[idx, "classification"]):
                             df.loc[idx, "classification"] = "Behavioral Anomaly"
                         
-                        if "reason" not in df.columns or not df.loc[idx].get("reason"):
+                        # if "reason" not in df.columns or not df.loc[idx].get("reason"):
+                        if "reason" not in df.columns or pd.isna(df.loc[idx, "reason"]):
+
                             df.loc[idx, "reason"] = reason
                         
                         # Set tag
@@ -505,7 +507,7 @@ def process_file(filepath):
 
     # 3. Behavioral anomalies 
     if "is_behavioral" in df.columns:
-        behavioral_anomalies = df[df["is_behavioral"] == True].copy()  # ← Added .copy()
+        behavioral_anomalies = df[df["is_behavioral"] == True].copy() 
         print(f"📊 Found {len(behavioral_anomalies)} behavioral anomalies to include in final output")
         if not behavioral_anomalies.empty:
             # Ensure behavioral anomalies have required columns
@@ -517,6 +519,12 @@ def process_file(filepath):
             
             # Ensure is_anomaly is set to 1 for behavioral anomalies
             behavioral_anomalies['is_anomaly'] = 1  # ← Added this line
+
+            # Convert timestamp to string to avoid JSON serialization issues
+        if "timestamp" in behavioral_anomalies.columns:
+            behavioral_anomalies["timestamp"] = pd.to_datetime(
+                behavioral_anomalies["timestamp"], errors='coerce'
+            ).dt.strftime('%Y-%m-%d %H:%M:%S.%f').str.slice(0, 23)
             
             anomaly_sources.append(behavioral_anomalies)
 
@@ -532,8 +540,20 @@ def process_file(filepath):
     print(f"   - Behavioral: {len(behavioral_anomalies) if 'behavioral_anomalies' in locals() else 0}")
 
 
-    out_file = os.path.join(app_config.RESULTS_FOLDER, f"{os.path.splitext(filename)[0]}_anomalies.json")
-    final_anomalies_df.to_json(out_file, orient="records", indent=2)
+    out_file = os.path.join(app_config.RESULTS_FOLDER, f"{os.path.splitext(filename)[0]}_anomalies.jsonl")
+    
+    with open(out_file, "w") as f:
+        for _, row in final_anomalies_df.iterrows():
+            timestamp = str(row.get("timestamp", ""))
+            log_hash = str(hash(row.get("log", "")))[-8:]
+            record_id = f"{timestamp}_{log_hash}"
+
+            record = row.to_dict()
+            record["record_id"] = record_id
+
+            json.dump(record, f)
+            f.write("\n")
+
     print(f"✅ Saved anomalies to {out_file} ({len(final_anomalies_df)} anomalies)")
 
     severity_summary = summarize_log_levels(df)
