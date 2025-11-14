@@ -542,17 +542,52 @@ def process_file(filepath):
 
     out_file = os.path.join(app_config.RESULTS_FOLDER, f"{os.path.splitext(filename)[0]}_anomalies.jsonl")
     
+    def clean_json_value(value):
+        """Convert non-serializable values to JSON-serializable ones."""
+        if pd.isna(value) or value in ('NaN', 'None', 'nan', None):
+            return None
+        try:
+            # Handle numpy types and other non-serializable values
+            if hasattr(value, 'item') and not isinstance(value, (str, bytes)):
+                return value.item()
+            return value
+        except (TypeError, ValueError):
+            return str(value)
+    
     with open(out_file, "w") as f:
         for _, row in final_anomalies_df.iterrows():
-            timestamp = str(row.get("timestamp", ""))
-            log_hash = str(hash(row.get("log", "")))[-8:]
-            record_id = f"{timestamp}_{log_hash}"
-
-            record = row.to_dict()
-            record["record_id"] = record_id
-
-            json.dump(record, f)
-            f.write("\n")
+            try:
+                # Get basic record data
+                record = row.to_dict()
+                
+                # Add record_id
+                timestamp = str(record.get("timestamp", "")).strip()
+                log_content = str(record.get("log", "")).strip()
+                log_hash = str(hash(log_content))[-8:]
+                record["record_id"] = f"{timestamp}_{log_hash}"
+                
+                # Clean all values in the record
+                clean_record = {}
+                for key, value in record.items():
+                    if isinstance(value, (list, tuple)):
+                        clean_record[key] = [clean_json_value(v) for v in value]
+                    elif isinstance(value, dict):
+                        clean_record[key] = {k: clean_json_value(v) for k, v in value.items()}
+                    else:
+                        clean_record[key] = clean_json_value(value)
+                
+                # Write as a single line of JSON
+                json_line = json.dumps(
+                    clean_record,
+                    ensure_ascii=False,
+                    default=str,
+                    separators=(',', ':')
+                )
+                f.write(json_line + "\n")
+                
+            except Exception as e:
+                print(f"⚠️ Error processing record: {e}")
+                continue
 
     print(f"✅ Saved anomalies to {out_file} ({len(final_anomalies_df)} anomalies)")
 
