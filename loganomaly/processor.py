@@ -779,9 +779,11 @@ def process_file(filepath):
         }
     }
 
-    summary_file = os.path.join(app_config.RESULTS_FOLDER, f"{os.path.splitext(filename)[0]}_summary.json")
+    summary_file = os.path.join(app_config.RESULTS_FOLDER, f"{os.path.splitext(filename)[0]}_summary.jsonl")
     with open(summary_file, "w", encoding="utf-8") as f:
-        json.dump(summary, f, indent=2, ensure_ascii=False)
+        # Write the summary as a single line in JSONL format
+        json.dump(summary, f, ensure_ascii=False)
+        f.write('\n')  # Add newline for JSONL format
     print(f"📄 Summary saved to {summary_file}")
 
 
