@@ -565,16 +565,16 @@ def process_file(filepath):
 
                 if timestamp:
                 # Replace 'T' with space if it exists
-                timestamp = timestamp.replace("T", " ")
-                
-                # Ensure milliseconds only (3 digits)
-                if '.' in timestamp:
-                    # Keep exactly 3 digits for milliseconds
-                    ts_main, ts_fraction = timestamp.split('.')
-                    timestamp = f"{ts_main}.{ts_fraction[:3]}"
-                else:
-                    # If no fractional seconds, add .000
-                    timestamp = f"{timestamp}.000"
+                    timestamp = timestamp.replace("T", " ")
+                    
+                    # Ensure milliseconds only (3 digits)
+                    if '.' in timestamp:
+                        # Keep exactly 3 digits for milliseconds
+                        ts_main, ts_fraction = timestamp.split('.')
+                        timestamp = f"{ts_main}.{ts_fraction[:3]}"
+                    else:
+                        # If no fractional seconds, add .000
+                        timestamp = f"{timestamp}.000"
 
                 record["timestamp"] = timestamp
                 log_content = str(record.get("log", "")).strip()
