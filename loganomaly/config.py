@@ -47,7 +47,7 @@ LLM_MODEL = "mistral:instruct"
 CONCURRENCY = 5  # Reduced concurrency to avoid overwhelming Ollama
 MAX_LOG_LENGTH = 512
 MAX_REASON_LENGTH = None
-TOP_N_LLM = 10
+TOP_N_LLM = 10000
 TIMEOUT = 30  # Increased timeout for LLM requests
 LLM_PROVIDER = "ollama"
 
