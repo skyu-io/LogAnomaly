@@ -32,10 +32,24 @@ def detect_knn_anomalies(df, top_percent=0.05, n_neighbors=5):
     Returns:
         pd.DataFrame: Updated DataFrame with 'anomaly_score' and 'is_anomaly'.
     """
+    n_samples = len(df)
+    
+    # Validate minimum samples
+    if n_samples < 2:
+        print(f"⚠️ Insufficient samples ({n_samples}) for KNN detection. Skipping...")
+        df["anomaly_score"] = 0.0
+        df["is_anomaly"] = 0
+        return df, None
+    
+    # Adjust n_neighbors to be at most n_samples - 1
+    adjusted_neighbors = min(n_neighbors, n_samples - 1)
+    if adjusted_neighbors < n_neighbors:
+        print(f"⚠️ Adjusted n_neighbors from {n_neighbors} to {adjusted_neighbors} (n_samples={n_samples})")
+    
     embeddings = compute_embeddings(df)
     print("📈 Calculating anomaly scores...")
 
-    knn = NearestNeighbors(n_neighbors=n_neighbors, metric="cosine", n_jobs=-1)
+    knn = NearestNeighbors(n_neighbors=adjusted_neighbors, metric="cosine", n_jobs=-1)
     knn.fit(embeddings)
     distances, _ = knn.kneighbors(embeddings)
     scores = distances.mean(axis=1)

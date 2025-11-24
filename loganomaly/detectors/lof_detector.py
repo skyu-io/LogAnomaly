@@ -27,16 +27,32 @@ def compute_embeddings(df):
     return embeddings
 
 
-def detect_anomalies_lof(df, top_percent):
+def detect_anomalies_lof(df, top_percent, n_neighbors=20):
     logger.info("📈 Running LOF anomaly detection...")
 
     if isinstance(df, tuple):
         logger.warning("Received tuple instead of DataFrame. Unpacking...")
         df = df[0] if isinstance(df[0], pd.DataFrame) else df[1]
 
+    n_samples = len(df)
+    
+    # Validate minimum samples
+    if n_samples < 2:
+        logger.warning(f"⚠️ Insufficient samples ({n_samples}) for LOF detection. Skipping...")
+        df["lof_label"] = 1
+        df["lof_score"] = 0.0
+        df["is_anomaly"] = 0
+        df["anomaly_source"] = "LOF"
+        return df
+    
+    # Adjust n_neighbors to be at most n_samples - 1
+    adjusted_neighbors = min(n_neighbors, n_samples - 1)
+    if adjusted_neighbors < n_neighbors:
+        logger.warning(f"⚠️ Adjusted n_neighbors from {n_neighbors} to {adjusted_neighbors} (n_samples={n_samples})")
+    
     embeddings = compute_embeddings(df)
 
-    lof = LocalOutlierFactor(n_neighbors=20, contamination=top_percent / 100)
+    lof = LocalOutlierFactor(n_neighbors=adjusted_neighbors, contamination=top_percent / 100)
     labels = lof.fit_predict(embeddings)
     scores = lof.negative_outlier_factor_
 

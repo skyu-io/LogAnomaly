@@ -13,7 +13,16 @@ def compute_lof_scores(features, n_neighbors=20):
     Returns:
         np.ndarray: Negative LOF scores (-1 is normal, lower values more anomalous).
     """
-    lof = LocalOutlierFactor(n_neighbors=n_neighbors, contamination='auto', n_jobs=-1)
+    n_samples = features.shape[0]
+    
+    # Validate minimum samples
+    if n_samples < 2:
+        return np.zeros(n_samples), np.ones(n_samples, dtype=int)
+    
+    # Adjust n_neighbors to be at most n_samples - 1
+    adjusted_neighbors = min(n_neighbors, n_samples - 1)
+    
+    lof = LocalOutlierFactor(n_neighbors=adjusted_neighbors, contamination='auto', n_jobs=-1)
     lof_scores = lof.fit_predict(features)
     negative_factor = lof.negative_outlier_factor_
     return negative_factor, lof_scores
