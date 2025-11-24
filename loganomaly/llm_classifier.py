@@ -55,7 +55,7 @@ class LLMClassifier:
         """Initialize the classifier."""
         self.config = config
         self.context_window = 5  # Number of logs before/after to include as context
-
+        
     async def classify(self, logs: List[str]) -> List[Dict[str, Any]]:
         """Classify logs as normal or anomalous."""
         results = []
@@ -108,75 +108,82 @@ class LLMClassifier:
             
         return results
 
-async def classify_log_llm(session, log_line, context_logs, classification_semaphore):
+
+async def classify_log_llm(session, log_line, context_logs):
     """Classify a log line using LLM."""
     global LLM_STATS
     start_time = time.time()
 
-    async with classification_semaphore:
-        try:
-            if len(log_line) > app_config.MAX_LOG_LENGTH:
-                log_line = log_line[:app_config.MAX_LOG_LENGTH] + "..."
+    try:
+        if len(log_line) > app_config.MAX_LOG_LENGTH:
+            log_line = log_line[:app_config.MAX_LOG_LENGTH] + "..."
 
-            if contains_secret_patterns(log_line):
-                LLM_STATS["total_calls"] += 1
-                LLM_STATS["total_time"] += time.time() - start_time
-                return "Sensitive Information Leak", "Contains possible secret/token.", ["Sensitive", "Security Threat"]
-
-            # Use workflow pipeline for classification
-            from loganomaly.workflow import LogAnalysisWorkflow
-            pipeline = LogAnalysisWorkflow({})
-            results = await pipeline.execute(log_line)
-            
-            if results.get("errors"):
-                error_msg = "; ".join(results["errors"].values()) if isinstance(results["errors"], dict) else str(results["errors"])
-                logger.error(f"LLM Error: {error_msg}")
-                return "Error", f"LLM Error: {error_msg}", ["Unknown"]
-                
-            reply = results.get("llm_response", "")
-            if not reply:
-                logger.error(f"Empty reply from LLM for log: {log_line}")
-                return "Unknown", "Empty reply from LLM", ["Unknown"]
-                
-            label, reason, tags = extract_tags(reply)
-            
-            # Update stats
+        if contains_secret_patterns(log_line):
             LLM_STATS["total_calls"] += 1
             LLM_STATS["total_time"] += time.time() - start_time
+            return "Sensitive Information Leak", "Contains possible secret/token.", ["Sensitive", "Security Threat"]
+
+        # Use workflow pipeline for classification
+        from loganomaly.workflow import LogAnalysisWorkflow
+        pipeline = LogAnalysisWorkflow({}, session=session)
+        results = await pipeline.execute(log_line)
+        
+        if results.get("errors"):
+            error_msg = "; ".join(results["errors"].values()) if isinstance(results["errors"], dict) else str(results["errors"])
+            logger.error(f"LLM Error: {error_msg}")
+            return "Error", f"LLM Error: {error_msg}", ["Unknown"]
             
-            return label, reason, clean_tags(tags)
+        reply = results.get("llm_response", "")
+        if not reply:
+            logger.error(f"Empty reply from LLM for log: {log_line}")
+            return "Unknown", "Empty reply from LLM", ["Unknown"]
             
-        except Exception as e:
-            logger.error(f"Error classifying log: {str(e)}")
-            LLM_STATS["errors"] += 1
-            return "Error", f"Classification error: {str(e)}", ["Unknown"]
+        label, reason, tags = extract_tags(reply)
+        
+        # Update stats
+        LLM_STATS["total_calls"] += 1
+        LLM_STATS["total_time"] += time.time() - start_time
+        
+        return label, reason, clean_tags(tags)
+        
+    except Exception as e:
+        logger.error(f"Error classifying log: {str(e)}")
+        LLM_STATS["errors"] += 1
+        return "Error", f"Classification error: {str(e)}", ["Unknown"]
 
 
 async def classify_anomalies(anomalies_df):
     global LLM_STATS
-    
-    classification_semaphore = asyncio.Semaphore(2)
 
     classifications = []
     reasons = []
     cleaned_logs = []
     tags_list = []
 
+    semaphore = asyncio.Semaphore(app_config.CONCURRENCY)
+
     connector = aiohttp.TCPConnector(limit=app_config.CONCURRENCY)
     async with aiohttp.ClientSession(connector=connector) as session:
-        tasks = []
-        for _, row in anomalies_df.iterrows():
-            log_line = row["log"]
-            context_logs = row.get("context_logs", [])
-            tasks.append(classify_log_llm(session, log_line, context_logs, classification_semaphore))
-
-        with tqdm(total=len(anomalies_df), desc="LLM Classification") as pbar:
-            for idx, future in enumerate(asyncio.as_completed(tasks)):
-                label, reason, tags = await future
-                classifications.append(label)
-                reasons.append(reason)
-                tags_list.append(tags)
-                cleaned_logs.append(clean_log_line(anomalies_df.iloc[idx]["log"]))
+        
+        async def bounded_classify(log_line, context_logs, pbar):
+            async with semaphore:
+                result = await classify_log_llm(session, log_line, context_logs)
                 pbar.update(1)
+                return result
+
+        tasks = []
+        with tqdm(total=len(anomalies_df), desc="LLM Classification") as pbar:
+            for _, row in anomalies_df.iterrows():
+                log_line = row["log"]
+                context_logs = row.get("context_logs", [])
+                tasks.append(bounded_classify(log_line, context_logs, pbar))
+
+            results = await asyncio.gather(*tasks)
+
+        for idx, (label, reason, tags) in enumerate(results):
+            classifications.append(label)
+            reasons.append(reason)
+            tags_list.append(tags)
+            cleaned_logs.append(clean_log_line(anomalies_df.iloc[idx]["log"]))
 
     return classifications, reasons, cleaned_logs, tags_list, LLM_STATS

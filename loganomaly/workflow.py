@@ -322,7 +322,8 @@ class LLMCallStep(WorkflowStep):
     def __init__(
         self,
         retry_config: Optional[RetryConfig] = None,
-        max_attempts: int = 3
+        max_attempts: int = 3,
+        session: Optional[aiohttp.ClientSession] = None
     ):
         super().__init__("llm_call")
         if retry_config is None:
@@ -339,10 +340,11 @@ class LLMCallStep(WorkflowStep):
                 ]
             )
         self.retry_config = retry_config
+        self.session = session
     
     async def execute(self, context: WorkflowContext) -> bool:
         from loganomaly import config as app_config
-        
+        logger.info(f"Executing LLM call step")
         try:
             # Use configured provider name
             provider = get_llm_provider(
@@ -360,9 +362,14 @@ class LLMCallStep(WorkflowStep):
             
             async def make_llm_call():
                 try:
-                    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=app_config.TIMEOUT)) as session:
+                    async with self.session.post(
+                        app_config.LLM_ENDPOINT,
+                        json=payload,
+                        headers={'Content-Type': 'application/json'}
+                    ) as resp:
                         try:
-                            async with session.post(
+                            logger.info(f"Making LLM call to {app_config.LLM_ENDPOINT}")
+                            async with self.session.post(
                                 app_config.LLM_ENDPOINT,
                                 json=payload,
                                 headers={'Content-Type': 'application/json'},
@@ -533,13 +540,14 @@ class ResponseEvaluationStep(WorkflowStep):
 class LogAnalysisWorkflow:
     """Main workflow for analyzing logs."""
     
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], session: Optional[aiohttp.ClientSession] = None):
         """Initialize the workflow."""
         self.config = config
+        self.session = session
         self.steps = [
             ThinkingStep(),
             PromptGenerationStep(),
-            LLMCallStep(),
+            LLMCallStep(session=session),
             ResponseEvaluationStep()
         ]
         
@@ -549,8 +557,9 @@ class LogAnalysisWorkflow:
         context.add_result("log", log)
         
         for step in self.steps:
-            logger.info(f"Executing step: {step.name}")
             success = await step.execute(context)
+            logger.info(f"Executing step: {step.name}")
+
             
             if not success:
                 logger.warning(f"Step {step.name} indicated failure: {context.errors.get(step.name)}")
