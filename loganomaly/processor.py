@@ -145,12 +145,22 @@ def get_context_logs(df, index, window=5):
     if "timestamp" in df.columns:
         for log_entry in context:
             if log_entry.get("timestamp") == df.iloc[index].get("timestamp"):
-                target_timestamp = log_entry.get("timestamp", "").strip()
+                ts_value = log_entry.get("timestamp", "")
+                # Convert to string safely (handle float, NaN, None)
+                if ts_value is None or (isinstance(ts_value, float) and pd.isna(ts_value)):
+                    target_timestamp = ""
+                else:
+                    target_timestamp = str(ts_value).strip()
                 break
     
     for log_entry in context:
         log_text = log_entry.get("log", "").strip()
-        timestamp = log_entry.get("timestamp", "").strip()
+        ts_value = log_entry.get("timestamp", "")
+        # Convert to string safely (handle float, NaN, None)
+        if ts_value is None or (isinstance(ts_value, float) and pd.isna(ts_value)):
+            timestamp = ""
+        else:
+            timestamp = str(ts_value).strip()
         
         # Basic log text validation (always required)
         if len(log_text) < 5 or len(log_text.split()) < 2:
