@@ -122,37 +122,69 @@ def detect_volume_anomalies(df):
 def get_context_logs(df, index, window=5):
     start = max(index - window, 0)
     end = min(index + window + 1, len(df))
-    context = df.iloc[start:end][["timestamp", "log"]].to_dict(orient="records")
+    
+    # Determine which columns are available
+    available_columns = []
+    if "timestamp" in df.columns:
+        available_columns.append("timestamp")
+    if "log" in df.columns:
+        available_columns.append("log")
+    
+    # If no required columns exist, return empty list
+    if not available_columns:
+        return []
+    
+    # Extract context with available columns
+    context = df.iloc[start:end][available_columns].to_dict(orient="records")
     
     # Filter out malformed or incomplete log entries
     filtered_context = []
     target_timestamp = None
     
-    # Find the target log's timestamp for time-based filtering
-    for log_entry in context:
-        if log_entry.get("timestamp") == df.iloc[index]["timestamp"]:
-            target_timestamp = log_entry.get("timestamp", "").strip()
-            break
+    # Find the target log's timestamp for time-based filtering (if timestamp column exists)
+    if "timestamp" in df.columns:
+        for log_entry in context:
+            if log_entry.get("timestamp") == df.iloc[index].get("timestamp"):
+                ts_value = log_entry.get("timestamp", "")
+                # Convert to string safely (handle float, NaN, None)
+                if ts_value is None or (isinstance(ts_value, float) and pd.isna(ts_value)):
+                    target_timestamp = ""
+                else:
+                    target_timestamp = str(ts_value).strip()
+                break
     
     for log_entry in context:
         log_text = log_entry.get("log", "").strip()
-        timestamp = log_entry.get("timestamp", "").strip()
+        ts_value = log_entry.get("timestamp", "")
+        # Convert to string safely (handle float, NaN, None)
+        if ts_value is None or (isinstance(ts_value, float) and pd.isna(ts_value)):
+            timestamp = ""
+        else:
+            timestamp = str(ts_value).strip()
+        
+        # Basic log text validation (always required)
+        if len(log_text) < 5 or len(log_text.split()) < 2:
+            continue
         
         # Skip entries that look like fragments or incomplete logs
         if (
-            len(log_text) < 5 or  # Too short to be meaningful
-            len(log_text.split()) < 2 or  # Single word entries (likely fragments)
-            not timestamp or len(timestamp) < 3 or  # Missing or too short timestamps
-            timestamp.startswith("(") or  # Parenthetical timestamps (fragments)
-            timestamp.startswith("'") or  # Quote-prefixed timestamps (fragments)
-            timestamp.startswith("+") or  # Command prefixes
-            not any(c.isdigit() for c in timestamp) or  # No digits in timestamp (likely not a real timestamp)
             log_text.startswith("'") and log_text.endswith("'") and len(log_text) < 50 or  # Short quoted fragments
             log_text.count("/") > 3 and len(log_text) < 100 or  # Path fragments
             "..." in log_text or  # Truncated content
             log_text.startswith("(") and log_text.endswith(")") and len(log_text) < 100  # Parenthetical fragments
         ):
             continue
+        
+        # Timestamp validation (only if timestamp column exists)
+        if "timestamp" in df.columns and timestamp:
+            if (
+                len(timestamp) < 3 or
+                timestamp.startswith("(") or  # Parenthetical timestamps (fragments)
+                timestamp.startswith("'") or  # Quote-prefixed timestamps (fragments)
+                timestamp.startswith("+") or  # Command prefixes
+                not any(c.isdigit() for c in timestamp)  # No digits in timestamp (likely not a real timestamp)
+            ):
+                continue
         
         # Time-based filtering: exclude logs from different days if target timestamp is available
         if target_timestamp and len(timestamp) >= 10 and len(target_timestamp) >= 10:

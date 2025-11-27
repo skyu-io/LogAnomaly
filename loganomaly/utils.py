@@ -261,6 +261,10 @@ def evaluate_behavioral_rules(df, behavioral_rules):
     if df.empty or not behavioral_rules:
         return anomalies
 
+    if "timestamp" not in df.columns:
+        print("⚠️ Behavioral rule evaluation skipped: 'timestamp' column is missing in the logs dataframe.")
+        return anomalies
+
     # Ensure timestamp is datetime
     if not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
         try:
