@@ -25,6 +25,25 @@ from loganomaly.llm_classifier import classify_anomalies, apply_dependent_anomal
 # === Load dynamic patterns ===
 custom_rule_patterns, custom_security_patterns = load_custom_patterns()
 
+def save_llm_candidates(anomalies_df, filename):
+    """
+    Save anomalies that should be sent to the LLM into a JSONL file.
+    """
+    if anomalies_df is None or anomalies_df.empty:
+        return None
+
+    base = os.path.splitext(filename)[0]
+    path = os.path.join(app_config.RESULTS_FOLDER, f"{base}_llm_candidates.jsonl")
+
+    # Keep the columns we need for LLM
+    cols = ["timestamp", "log", "context_logs", "anomaly_score", "source_file"]
+    cols = [c for c in cols if c in anomalies_df.columns]
+
+    anomalies_df[cols].to_json(path, orient="records", lines=True, force_ascii=False)
+    print(f"💾 Saved LLM candidates to {path}")
+    return path
+
+
 def load_logs(filepath):
     filename = os.path.basename(filepath)
     log_lines = []
@@ -302,7 +321,9 @@ def apply_rule_based_classification(row):
 
 def process_file(filepath):
     filename = os.path.basename(filepath)
-    print(f"\n🔍 Processing {filename}")
+    llm_phase = getattr(app_config, "LLM_PHASE", "full")
+    
+    print(f"\n🔍 Processing {filename} (LLM phase={llm_phase})")
 
     df, original_count = load_logs(filepath)
     if df is None or len(df) == 0:
@@ -413,38 +434,76 @@ def process_file(filepath):
 
             anomalies_df = pd.DataFrame(filtered)
 
-            if not anomalies_df.empty:
-                print(f"\n🤖 Classifying {len(anomalies_df)} anomalies (LLM)...")
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                classifications, reasons, cleaned_logs, tags_list, llm_stats = loop.run_until_complete(
-                    classify_anomalies(anomalies_df)
-                )
-
-                print(f"📊 LLM Usage → {llm_stats['total_calls']} calls, "
-                      f"{llm_stats['total_tokens']} tokens, "
-                      f"Avg time: {llm_stats['total_time']/max(llm_stats['total_calls'],1):.2f}s, "
-                      f"Errors: {llm_stats['errors']}")
-
-                # Ensure classifications are properly saved
-                anomalies_df["classification"] = classifications
-                anomalies_df["reason"] = reasons
-                anomalies_df["tag"] = tags_list
-                anomalies_df["cleaned_log"] = cleaned_logs
-                anomalies_df["is_llm_anomaly"] = True
-                anomalies_df["anomaly_source"] = "LLM"
-                
-                # Add security classification for LLM anomalies
-                anomalies_df["is_security_related"] = anomalies_df.apply(
-                    lambda row: is_security_related_anomaly(row, custom_security_patterns), axis=1
-                )
-
-                if app_config.ENABLE_DEPENDENT_ANOMALY_FILTER:
-                    anomalies_df = anomalies_df.apply(apply_dependent_anomaly_filter, axis=1)
-
-                llm_classification_done = True
-            else:
+            if anomalies_df.empty:
                 llm_stats = {}
+                # print(f"\n🤖 Classifying {len(anomalies_df)} anomalies (LLM)...")
+                # loop = asyncio.new_event_loop()
+                # asyncio.set_event_loop(loop)
+                # classifications, reasons, cleaned_logs, tags_list, llm_stats = loop.run_until_complete(
+                #     classify_anomalies(anomalies_df)
+                # )
+
+                # print(f"📊 LLM Usage → {llm_stats['total_calls']} calls, "
+                #       f"{llm_stats['total_tokens']} tokens, "
+                #       f"Avg time: {llm_stats['total_time']/max(llm_stats['total_calls'],1):.2f}s, "
+                #       f"Errors: {llm_stats['errors']}")
+
+                # # Ensure classifications are properly saved
+                # anomalies_df["classification"] = classifications
+                # anomalies_df["reason"] = reasons
+                # anomalies_df["tag"] = tags_list
+                # anomalies_df["cleaned_log"] = cleaned_logs
+                # anomalies_df["is_llm_anomaly"] = True
+                # anomalies_df["anomaly_source"] = "LLM"
+                
+                # # Add security classification for LLM anomalies
+                # anomalies_df["is_security_related"] = anomalies_df.apply(
+                #     lambda row: is_security_related_anomaly(row, custom_security_patterns), axis=1
+                # )
+
+                # if app_config.ENABLE_DEPENDENT_ANOMALY_FILTER:
+                #     anomalies_df = anomalies_df.apply(apply_dependent_anomaly_filter, axis=1)
+
+                # llm_classification_done = True
+            else:
+                llm_phase = getattr(app_config, "LLM_PHASE", "full")
+
+                if llm_phase == "prepare":
+                    # 🔹 CPU-only phase: just save candidates and skip the LLM call
+                    save_llm_candidates(anomalies_df, filename)
+                    llm_stats = {}
+                    llm_classification_done = False
+
+                elif llm_phase == "full":
+                    print(f"\n🤖 Classifying {len(anomalies_df)} anomalies (LLM)...")
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    classifications, reasons, cleaned_logs, tags_list, llm_stats = loop.run_until_complete(
+                        classify_anomalies(anomalies_df)
+                    )
+
+                    print(f"📊 LLM Usage → {llm_stats['total_calls']} calls, "
+                          f"{llm_stats['total_tokens']} tokens, "
+                          f"Avg time: {llm_stats['total_time']/max(llm_stats['total_calls'],1):.2f}s, "
+                          f"Errors: {llm_stats['errors']}")
+
+                    anomalies_df["classification"] = classifications
+                    anomalies_df["reason"] = reasons
+                    anomalies_df["tag"] = tags_list
+                    anomalies_df["cleaned_log"] = cleaned_logs
+                    anomalies_df["is_llm_anomaly"] = True
+                    anomalies_df["anomaly_source"] = "LLM"
+                    anomalies_df["is_security_related"] = anomalies_df.apply(
+                        lambda row: is_security_related_anomaly(row, custom_security_patterns), axis=1
+                    )
+
+                    if app_config.ENABLE_DEPENDENT_ANOMALY_FILTER:
+                        anomalies_df = anomalies_df.apply(apply_dependent_anomaly_filter, axis=1)
+
+                    llm_classification_done = True
+                else:
+                    # llm_phase == "classify": nothing to do here in this pass
+                    llm_stats = {}
         else:
             llm_stats = {}
 
@@ -531,8 +590,9 @@ def process_file(filepath):
         if not rule_based_anomalies.empty:
             anomaly_sources.append(rule_based_anomalies)
 
-    # 2. LLM/Statistical anomalies
-    if not anomalies_df.empty:
+    # 2. LLM/Statistical anomalies (only when not in prepare phase)
+    llm_phase = getattr(app_config, "LLM_PHASE", "full")
+    if llm_phase != "prepare" and not anomalies_df.empty:
         llm_anomalies = anomalies_df[anomalies_df["is_anomaly"] == 1]
         if not llm_anomalies.empty:
             anomaly_sources.append(llm_anomalies)
@@ -835,6 +895,36 @@ def process_file(filepath):
 
 
 def process_all_files():
+    llm_phase = getattr(app_config, "LLM_PHASE", "full")
+    print(f"🚀 Starting log anomaly processing (LLM phase={llm_phase})")
+    
+        # 🔹 LLM-only mode: operate on saved candidates, ignore raw logs
+    if llm_phase == "classify":
+        results_folder = app_config.RESULTS_FOLDER
+
+        if not os.path.exists(results_folder):
+            print(f"⚠️ Results folder not found: {results_folder}")
+            return
+
+        candidates_files = [
+            os.path.join(results_folder, f)
+            for f in os.listdir(results_folder)
+            if f.endswith("_llm_candidates.jsonl")
+        ]
+
+        if not candidates_files:
+            print(f"⚠️ No *_llm_candidates.jsonl files found in {results_folder}")
+            return
+
+        print(f"🤖 Found {len(candidates_files)} candidate files for LLM classification")
+        for path in tqdm(candidates_files, desc="LLM-only classification"):
+            run_llm_only_on_candidates(path)
+
+        print("✅ LLM-only phase complete.")
+        return
+
+    # 🔹 Otherwise: existing behavior (full / prepare)
+    
     input_folder = app_config.INPUT_FOLDER
 
     if not os.path.exists(input_folder):
@@ -853,3 +943,35 @@ def process_all_files():
         process_file(file)
 
     print(f"✅ Completed. Results saved in → {app_config.RESULTS_FOLDER}")
+
+
+def run_llm_only_on_candidates(candidates_file: str):
+    """
+    LLM-only stage: load previously saved candidates, classify with LLM, and write result file.
+    """
+    print(f"🔎 LLM-only classification for {candidates_file}")
+    df_candidates = pd.read_json(candidates_file, lines=True)
+
+    if df_candidates.empty:
+        print("⚠️ No candidates in file, skipping.")
+        return
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    classifications, reasons, cleaned_logs, tags_list, llm_stats = loop.run_until_complete(
+        classify_anomalies(df_candidates)
+    )
+
+    df_candidates["classification"] = classifications
+    df_candidates["reason"] = reasons
+    df_candidates["tag"] = tags_list
+    df_candidates["cleaned_log"] = cleaned_logs
+    df_candidates["is_llm_anomaly"] = True
+    df_candidates["anomaly_source"] = "LLM"
+    df_candidates["is_anomaly"] = 1
+
+    out_file = candidates_file.replace("_llm_candidates", "_llm_results")
+    df_candidates.to_json(out_file, orient="records", lines=True, force_ascii=False)
+
+    print(f"✅ Saved LLM classification results to {out_file}")
+    print(f"📊 LLM stats: {llm_stats}")
