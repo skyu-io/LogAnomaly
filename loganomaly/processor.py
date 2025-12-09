@@ -975,3 +975,10 @@ def run_llm_only_on_candidates(candidates_file: str):
 
     print(f"✅ Saved LLM classification results to {out_file}")
     print(f"📊 LLM stats: {llm_stats}")
+    
+     # 🧹 Always delete the candidates file after successful classify
+    try:
+        os.remove(candidates_file)
+        print(f"🧹 Deleted LLM candidate file: {candidates_file}")
+    except OSError as e:
+        print(f"⚠️ Could not delete candidates file {candidates_file}: {e}")
