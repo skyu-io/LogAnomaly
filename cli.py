@@ -25,10 +25,17 @@ from loganomaly import config as app_config
 @click.option('--rolling-window-size', type=int, default=None, help='Rolling window size.')
 @click.option('--rolling-window-threshold', type=float, default=None, help='Flood detection threshold in window.')
 @click.option('--file-config-map', type=str, help='JSON mapping of input files to their specific config files.')
+@click.option(
+    '--llm-phase',
+    type=click.Choice(['full', 'prepare', 'classify']),
+    default='full',
+    help='full = current behavior, prepare = CPU-only (save LLM candidates), classify = LLM-only on saved candidates.'
+)
 def cli(
     input, output, config, max_logs, disable_llm, summary_only, llm, compliance_mode, verbose, show_results,
     enable_lof, lof_n_neighbors, lof_contamination, enable_rolling_window, rolling_window_size, rolling_window_threshold,
-    file_config_map
+    file_config_map,
+    llm_phase,
 ):
     """
     🚀 LogAnomaly - Semantic, Statistical & Rule-Based Log Anomaly Detector
@@ -80,6 +87,9 @@ def cli(
     app_config.LLM_MODEL = llm_cfg.get('model', app_config.LLM_MODEL)
     app_config.TIMEOUT = llm_cfg.get('timeout', app_config.TIMEOUT)
     app_config.MAX_RETRIES = llm_cfg.get('max_retries', getattr(app_config, 'MAX_RETRIES', 3))
+    
+    app_config.LLM_PHASE = llm_phase or getattr(app_config, "LLM_PHASE", "full")
+
 
     app_config.ADDITIONAL_SECURITY_PATTERNS = yaml_config.get("additional_security_patterns", [])
     app_config.ADDITIONAL_RULE_BASED_PATTERNS = yaml_config.get("additional_rule_based_patterns", [])
@@ -116,7 +126,9 @@ def cli(
     app_config.ROLLING_WINDOW_THRESHOLD = rolling_window_threshold or rolling_window_cfg.get('repetition_threshold', yaml_config.get("rolling_window_threshold", app_config.ROLLING_WINDOW_THRESHOLD))
 
     # === Run ===
-    click.echo(f"🔍 Starting analysis on → {input}")
+    # click.echo(f"🔍 Starting analysis on → {input}")
+    click.echo(f"🔍 Starting analysis on → {input} (LLM phase={app_config.LLM_PHASE})")
+
     processor.process_all_files()
     click.echo(f"✅ Completed. Results saved in → {output}")
 
