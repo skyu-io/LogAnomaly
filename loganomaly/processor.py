@@ -435,36 +435,7 @@ def process_file(filepath):
             anomalies_df = pd.DataFrame(filtered)
 
             if anomalies_df.empty:
-                llm_stats = {}
-                # print(f"\n🤖 Classifying {len(anomalies_df)} anomalies (LLM)...")
-                # loop = asyncio.new_event_loop()
-                # asyncio.set_event_loop(loop)
-                # classifications, reasons, cleaned_logs, tags_list, llm_stats = loop.run_until_complete(
-                #     classify_anomalies(anomalies_df)
-                # )
-
-                # print(f"📊 LLM Usage → {llm_stats['total_calls']} calls, "
-                #       f"{llm_stats['total_tokens']} tokens, "
-                #       f"Avg time: {llm_stats['total_time']/max(llm_stats['total_calls'],1):.2f}s, "
-                #       f"Errors: {llm_stats['errors']}")
-
-                # # Ensure classifications are properly saved
-                # anomalies_df["classification"] = classifications
-                # anomalies_df["reason"] = reasons
-                # anomalies_df["tag"] = tags_list
-                # anomalies_df["cleaned_log"] = cleaned_logs
-                # anomalies_df["is_llm_anomaly"] = True
-                # anomalies_df["anomaly_source"] = "LLM"
-                
-                # # Add security classification for LLM anomalies
-                # anomalies_df["is_security_related"] = anomalies_df.apply(
-                #     lambda row: is_security_related_anomaly(row, custom_security_patterns), axis=1
-                # )
-
-                # if app_config.ENABLE_DEPENDENT_ANOMALY_FILTER:
-                #     anomalies_df = anomalies_df.apply(apply_dependent_anomaly_filter, axis=1)
-
-                # llm_classification_done = True
+                llm_stats = {}               
             else:
                 llm_phase = getattr(app_config, "LLM_PHASE", "full")
 
