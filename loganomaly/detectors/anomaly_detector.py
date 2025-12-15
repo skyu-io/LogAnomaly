@@ -1,9 +1,24 @@
 import numpy as np
-from sentence_transformers import SentenceTransformer
 from sklearn.neighbors import NearestNeighbors
 
+from loganomaly import config as app_config
+from loganomaly.embedding_cache import get_embedding_model
 
-def compute_embeddings(df, model_name="sentence-transformers/paraphrase-MiniLM-L6-v2"):
+# Optional FAISS for approximate nearest neighbors (CPU or GPU)
+try:  # pragma: no cover - optional dependency
+    import faiss  # type: ignore
+
+    HAVE_FAISS = True
+    # Check for GPU support
+    HAVE_FAISS_GPU = faiss.get_num_gpus() > 0
+    if HAVE_FAISS_GPU:
+        print(f"🚀 FAISS GPU available: {faiss.get_num_gpus()} GPU(s) detected")
+except Exception:  # pragma: no cover - optional dependency
+    HAVE_FAISS = False
+    HAVE_FAISS_GPU = False
+
+
+def compute_embeddings(df, model_name=None):
     """
     Compute sentence embeddings for log lines.
 
@@ -15,9 +30,45 @@ def compute_embeddings(df, model_name="sentence-transformers/paraphrase-MiniLM-L
         np.ndarray: Embedding vectors.
     """
     print("🔤 Computing embeddings...")
-    model = SentenceTransformer(model_name)
+    model_name = model_name or getattr(
+        app_config, "EMBEDDING_MODEL", "sentence-transformers/paraphrase-MiniLM-L6-v2"
+    )
+    model = get_embedding_model(model_name)
     embeddings = model.encode(df["log"].tolist(), show_progress_bar=True)
     return embeddings
+
+
+def _faiss_mean_cosine_distance(embeddings: np.ndarray, k: int) -> np.ndarray:
+    """
+    Approximate KNN mean cosine distance using FAISS (CPU-only, HNSW).
+    
+    Args:
+        embeddings (np.ndarray): Embedding vectors (float32).
+        k (int): Number of nearest neighbors.
+    
+    Returns:
+        np.ndarray: Mean cosine distance for each vector.
+    """
+    vecs = embeddings.astype("float32", copy=True)
+    faiss.normalize_L2(vecs)
+
+    d = vecs.shape[1]
+
+    print("💻 Using FAISS CPU (HNSW) for neighbor search...")
+
+    # HNSW index
+    m = getattr(app_config, "FAISS_HNSW_M", 32)
+    ef_search = getattr(app_config, "FAISS_EF_SEARCH", 64)
+
+    index = faiss.IndexHNSWFlat(d, m, faiss.METRIC_INNER_PRODUCT)
+    index.hnsw.efSearch = ef_search
+    index.add(vecs)
+
+    distances, _ = index.search(vecs, k)
+
+    # Convert cosine similarity to distance
+    cosine_distances = 1.0 - distances
+    return cosine_distances.mean(axis=1)
 
 
 def detect_knn_anomalies(df, top_percent=0.05, n_neighbors=5):
@@ -49,10 +100,15 @@ def detect_knn_anomalies(df, top_percent=0.05, n_neighbors=5):
     embeddings = compute_embeddings(df)
     print("📈 Calculating anomaly scores...")
 
-    knn = NearestNeighbors(n_neighbors=adjusted_neighbors, metric="cosine", n_jobs=-1)
-    knn.fit(embeddings)
-    distances, _ = knn.kneighbors(embeddings)
-    scores = distances.mean(axis=1)
+    use_faiss = getattr(app_config, "USE_FAISS", False) and HAVE_FAISS
+
+    if use_faiss:
+        scores = _faiss_mean_cosine_distance(embeddings, adjusted_neighbors)
+    else:
+        knn = NearestNeighbors(n_neighbors=adjusted_neighbors, metric="cosine", n_jobs=-1)
+        knn.fit(embeddings)
+        distances, _ = knn.kneighbors(embeddings)
+        scores = distances.mean(axis=1)
     df["anomaly_score"] = scores
 
     top_n = int(top_percent * len(df)) or 1

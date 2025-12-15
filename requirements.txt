@@ -3,6 +3,7 @@ pandas
 aiohttp
 sentence-transformers
 scikit-learn
+faiss-cpu
 drain3
 detect-secrets
 tqdm

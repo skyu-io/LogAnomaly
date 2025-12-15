@@ -399,10 +399,15 @@ def process_file(filepath):
             repetition_threshold=app_config.ROLLING_WINDOW_THRESHOLD
         )
 
-    df = knn_detect(df, app_config.TOP_PERCENT)
+    df, embeddings = knn_detect(df, app_config.TOP_PERCENT)
 
     if app_config.ENABLE_LOF:
-        df = detect_anomalies_lof(df, app_config.TOP_PERCENT, n_neighbors=app_config.LOF_N_NEIGHBORS)
+        df = detect_anomalies_lof(
+            df,
+            app_config.TOP_PERCENT,
+            n_neighbors=app_config.LOF_N_NEIGHBORS,
+            embeddings=embeddings
+        )
 
     df = df.apply(apply_rule_based_classification, axis=1)
     rule_based_count = df["is_rule_based"].sum()

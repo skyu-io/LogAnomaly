@@ -1,17 +1,16 @@
 import pandas as pd
 import logging
 from sklearn.neighbors import LocalOutlierFactor
-from sentence_transformers import SentenceTransformer
+
+from loganomaly import config as app_config
+from loganomaly.embedding_cache import get_embedding_model
 
 # === Logger setup ===
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# === Embedding model ===
-embedding_model = SentenceTransformer("paraphrase-MiniLM-L6-v2")
 
-
-def compute_embeddings(df):
+def compute_embeddings(df, model_name=None):
     if isinstance(df, tuple):
         logger.warning("Received tuple instead of DataFrame. Unpacking...")
         df = df[0] if isinstance(df[0], pd.DataFrame) else df[1]
@@ -23,11 +22,15 @@ def compute_embeddings(df):
         raise KeyError("DataFrame missing required 'log' column")
 
     logger.info(f"🔤 Computing embeddings for {len(df)} log lines...")
-    embeddings = embedding_model.encode(df["log"].tolist(), show_progress_bar=True)
+    model_name = model_name or getattr(
+        app_config, "EMBEDDING_MODEL", "sentence-transformers/paraphrase-MiniLM-L6-v2"
+    )
+    model = get_embedding_model(model_name)
+    embeddings = model.encode(df["log"].tolist(), show_progress_bar=True)
     return embeddings
 
 
-def detect_anomalies_lof(df, top_percent, n_neighbors=20):
+def detect_anomalies_lof(df, top_percent, n_neighbors=20, embeddings=None):
     logger.info("📈 Running LOF anomaly detection...")
 
     if isinstance(df, tuple):
@@ -50,7 +53,7 @@ def detect_anomalies_lof(df, top_percent, n_neighbors=20):
     if adjusted_neighbors < n_neighbors:
         logger.warning(f"⚠️ Adjusted n_neighbors from {n_neighbors} to {adjusted_neighbors} (n_samples={n_samples})")
     
-    embeddings = compute_embeddings(df)
+    embeddings = embeddings if embeddings is not None else compute_embeddings(df)
 
     lof = LocalOutlierFactor(n_neighbors=adjusted_neighbors, contamination=top_percent / 100)
     labels = lof.fit_predict(embeddings)

@@ -10,6 +10,11 @@ LARGE_LOG_WARNING_THRESHOLD = 100000
 TOP_PERCENT = 0.05  # Top anomalies to classify
 ANOMALY_THRESHOLD = 0  # Threshold to trigger LLM
 USE_DRAIN3_LIGHT = False
+EMBEDDING_MODEL = "sentence-transformers/paraphrase-MiniLM-L6-v2"
+USE_FAISS = True  # Enable approximate nearest neighbors for KNN
+USE_FAISS_GPU = False  # Use GPU acceleration if available (requires faiss-gpu)
+FAISS_HNSW_M = 32  # HNSW parameter (CPU fallback)
+FAISS_EF_SEARCH = 64  # HNSW search parameter (CPU fallback)
 
 # === Repetitive Template Detection ===
 ENABLE_SPAM_DETECTION = True
