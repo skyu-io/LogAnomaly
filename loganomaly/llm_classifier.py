@@ -163,6 +163,7 @@ async def classify_anomalies(anomalies_df):
     semaphore = asyncio.Semaphore(app_config.CONCURRENCY)
 
     connector = aiohttp.TCPConnector(limit=app_config.CONCURRENCY)
+    logger.info(f"Starting LLM classification with concurrency: {app_config.CONCURRENCY}")
     async with aiohttp.ClientSession(connector=connector) as session:
         
         async def bounded_classify(log_line, context_logs, pbar):
