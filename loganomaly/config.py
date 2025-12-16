@@ -9,10 +9,9 @@ LARGE_LOG_WARNING_THRESHOLD = 100000
 # === Statistical Detection Config ===
 TOP_PERCENT = 0.05  # Top anomalies to classify
 ANOMALY_THRESHOLD = 0  # Threshold to trigger LLM
-USE_DRAIN3_LIGHT = False
+USE_DRAIN3_LIGHT = True  # Faster template mining (depth=3, threshold=0.5)
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-MiniLM-L6-v2"
-USE_FAISS = True  # Enable approximate nearest neighbors for KNN
-USE_FAISS_GPU = False  # Use GPU acceleration if available (requires faiss-gpu)
+USE_FAISS = True  # Note: faiss-cpu crashes on Apple Silicon with Python 3.13
 FAISS_HNSW_M = 32  # HNSW parameter (CPU fallback)
 FAISS_EF_SEARCH = 64  # HNSW search parameter (CPU fallback)
 
