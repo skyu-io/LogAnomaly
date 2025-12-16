@@ -902,7 +902,6 @@ def process_all_files():
     print(f"🔍 Found {len(files)} log files to process")
     for file in tqdm(files, desc="Processing Log Files"):
         process_file(file)
-
     print(f"✅ Completed. Results saved in → {app_config.RESULTS_FOLDER}")
 
 

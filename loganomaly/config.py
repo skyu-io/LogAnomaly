@@ -11,7 +11,12 @@ TOP_PERCENT = 0.05  # Top anomalies to classify
 ANOMALY_THRESHOLD = 0  # Threshold to trigger LLM
 USE_DRAIN3_LIGHT = True  # Faster template mining (depth=3, threshold=0.5)
 EMBEDDING_MODEL = "sentence-transformers/paraphrase-MiniLM-L6-v2"
-USE_FAISS = True  # Note: faiss-cpu crashes on Apple Silicon with Python 3.13
+EMBEDDING_BATCH_SIZE = 128  # Batch size for embedding model encode
+EMBEDDING_BATCH_THRESHOLD = 1000  # Use batching only when above this many rows
+USE_EMBEDDING_POOL = True  # Reuse multi-process pools for SentenceTransformer.encode
+EMBEDDING_CPU_WORKERS = None  # None = auto (min(logical_cpus, 4))
+EMBEDDING_POOL_DEVICES = ["cpu"]   # Override target devices, e.g., ["cpu"] * 4
+USE_FAISS = False  # Note: faiss-cpu crashes on Apple Silicon with Python 3.13
 FAISS_HNSW_M = 32  # HNSW parameter (CPU fallback)
 FAISS_EF_SEARCH = 64  # HNSW search parameter (CPU fallback)
 

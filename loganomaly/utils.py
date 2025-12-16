@@ -29,6 +29,12 @@ DEFAULT_RULE_BASED_PATTERNS = [
     {"name": "Resource Limit Issue", "pattern": r"(?:out of memory|OOM|cpu limit exceeded|quota exceeded)", "reason": "Resource limit breach."},
 ]
 
+
+def convert_to_non_capturing(pattern: str) -> str:
+    """Convert capturing groups (...) to non-capturing (?:...) to avoid pandas warnings/errors."""
+    return re.sub(r"(?<!\\)\((?!\?)", "(?:", pattern)
+
+
 def load_custom_patterns():
     """
     Merge default rule & security patterns with additional patterns from config.
@@ -59,19 +65,34 @@ def redact_security_leaks(log_line):
 
 
 def find_security_leaks(df, security_patterns):
+
+    if df.empty or not security_patterns or "log" not in df.columns:
+        return []
+
     leaks = []
-    for idx, row in df.iterrows():
-        log = row["log"]
-        for pattern in security_patterns:
-            if re.search(pattern["pattern"], log):
-                redacted = redact_security_leaks(log)
+    seen_indices = set()
+
+    for pattern in security_patterns:
+        safe_pattern = convert_to_non_capturing(pattern["pattern"])
+        try:
+            mask = df["log"].str.contains(safe_pattern, case=False, regex=True, na=False)
+        except re.error:
+            continue
+
+        if mask.any():
+            matched = df[mask]
+            for idx, row in matched.iterrows():
+                if idx in seen_indices:
+                    continue  # dedupe if multiple patterns match same row
+                seen_indices.add(idx)
+                redacted = redact_security_leaks(row["log"])
                 leaks.append({
                     "index": idx,
-                    "timestamp": row["timestamp"],
+                    "timestamp": row.get("timestamp"),
                     "log": redacted,
-                    "reason": f"Possible {pattern['name']} leakage."
+                    "reason": f"Possible {pattern.get('name', 'Security')} leakage."
                 })
-                break
+
     return leaks
 
 
@@ -266,11 +287,6 @@ def apply_rule_based_classification_vectorized(df, rule_patterns, security_patte
     
     # Track which rows have been classified (first match wins)
     classified_mask = pd.Series([False] * n_rows, index=df.index)
-    
-    def convert_to_non_capturing(pattern):
-        """Convert capturing groups (...) to non-capturing (?:...) to avoid pandas warnings."""
-        # Match ( not preceded by \ and not followed by ? (which would be (?:, (?=, etc.)
-        return re.sub(r'(?<!\\)\((?!\?)', '(?:', pattern)
     
     for rule in rule_patterns:
         pattern = rule["pattern"]
