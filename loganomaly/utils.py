@@ -17,16 +17,23 @@ DEFAULT_SECURITY_PATTERNS = [
 ]
 
 # === Default Rule-Based Anomaly Patterns ===
+# Note: Use non-capturing groups (?:...) instead of (...) to avoid pandas warnings
 DEFAULT_RULE_BASED_PATTERNS = [
-    {"name": "Database Error", "pattern": r"(database|db).*error", "reason": "Database operation failed."},
-    {"name": "Service Timeout", "pattern": r"(timeout|timed out|request timed out)", "reason": "Service call timed out."},
+    {"name": "Database Error", "pattern": r"(?:database|db).*error", "reason": "Database operation failed."},
+    {"name": "Service Timeout", "pattern": r"(?:timeout|timed out|request timed out)", "reason": "Service call timed out."},
     {"name": "HTTP 500 Error", "pattern": r"status\s*[:=]\s*500", "reason": "HTTP 500 server error."},
-    {"name": "Process Crash", "pattern": r"(process|service)\s*(exited|crashed|terminated)", "reason": "Process crash detected."},
-    {"name": "Restart Detected", "pattern": r"(restart|restarting)", "reason": "Process or pod restart detected."},
-    {"name": "Dependency Failure", "pattern": r"(dependency|service)\s*(unavailable|failed|error)", "reason": "Dependency failure detected."},
-    {"name": "Configuration Issue", "pattern": r"(invalid|missing)\s*configuration", "reason": "Configuration issue."},
-    {"name": "Resource Limit Issue", "pattern": r"(out of memory|OOM|cpu limit exceeded|quota exceeded)", "reason": "Resource limit breach."},
+    {"name": "Process Crash", "pattern": r"(?:process|service)\s*(?:exited|crashed|terminated)", "reason": "Process crash detected."},
+    {"name": "Restart Detected", "pattern": r"(?:restart|restarting)", "reason": "Process or pod restart detected."},
+    {"name": "Dependency Failure", "pattern": r"(?:dependency|service)\s*(?:unavailable|failed|error)", "reason": "Dependency failure detected."},
+    {"name": "Configuration Issue", "pattern": r"(?:invalid|missing)\s*configuration", "reason": "Configuration issue."},
+    {"name": "Resource Limit Issue", "pattern": r"(?:out of memory|OOM|cpu limit exceeded|quota exceeded)", "reason": "Resource limit breach."},
 ]
+
+
+def convert_to_non_capturing(pattern: str) -> str:
+    """Convert capturing groups (...) to non-capturing (?:...) to avoid pandas warnings/errors."""
+    return re.sub(r"(?<!\\)\((?!\?)", "(?:", pattern)
+
 
 def load_custom_patterns():
     """
@@ -58,19 +65,34 @@ def redact_security_leaks(log_line):
 
 
 def find_security_leaks(df, security_patterns):
+
+    if df.empty or not security_patterns or "log" not in df.columns:
+        return []
+
     leaks = []
-    for idx, row in df.iterrows():
-        log = row["log"]
-        for pattern in security_patterns:
-            if re.search(pattern["pattern"], log):
-                redacted = redact_security_leaks(log)
+    seen_indices = set()
+
+    for pattern in security_patterns:
+        safe_pattern = convert_to_non_capturing(pattern["pattern"])
+        try:
+            mask = df["log"].str.contains(safe_pattern, case=False, regex=True, na=False)
+        except re.error:
+            continue
+
+        if mask.any():
+            matched = df[mask]
+            for idx, row in matched.iterrows():
+                if idx in seen_indices:
+                    continue  # dedupe if multiple patterns match same row
+                seen_indices.add(idx)
+                redacted = redact_security_leaks(row["log"])
                 leaks.append({
                     "index": idx,
-                    "timestamp": row["timestamp"],
+                    "timestamp": row.get("timestamp"),
                     "log": redacted,
-                    "reason": f"Possible {pattern['name']} leakage."
+                    "reason": f"Possible {pattern.get('name', 'Security')} leakage."
                 })
-                break
+
     return leaks
 
 
@@ -235,6 +257,89 @@ def rule_based_classification(log_line, rule_based_patterns):
         if re.search(rule["pattern"], log_line, re.IGNORECASE):
             return "Operational Error", rule["reason"], [rule["name"]]
     return None
+
+
+def apply_rule_based_classification_vectorized(df, rule_patterns, security_patterns):
+    """
+    Vectorized rule-based classification - much faster than row-by-row apply.
+    
+    Args:
+        df: DataFrame with 'log' column
+        rule_patterns: List of rule pattern dicts with 'pattern', 'reason', 'name'
+        security_patterns: List of security pattern dicts for security-related check
+    
+    Returns:
+        DataFrame with classification columns added
+    """
+    n_rows = len(df)
+    
+    # Initialize columns with default values
+    df["is_rule_based"] = False
+    df["is_security_related"] = False
+    df["classification"] = None
+    df["reason"] = None
+    df["tag"] = [[] for _ in range(n_rows)]  # List of empty lists
+    df["anomaly_source"] = None
+    
+    # Ensure is_anomaly exists
+    if "is_anomaly" not in df.columns:
+        df["is_anomaly"] = 0
+    
+    # Track which rows have been classified (first match wins)
+    classified_mask = pd.Series([False] * n_rows, index=df.index)
+    
+    for rule in rule_patterns:
+        pattern = rule["pattern"]
+        reason = rule.get("reason", "Rule-based detection")
+        name = rule.get("name", "Unknown Rule")
+        
+        # Convert any capturing groups to non-capturing for str.contains()
+        safe_pattern = convert_to_non_capturing(pattern)
+        
+        # Vectorized regex matching - only on unclassified rows
+        try:
+            match_mask = (
+                ~classified_mask & 
+                df["log"].str.contains(safe_pattern, case=False, regex=True, na=False)
+            )
+        except re.error as e:
+            print(f"⚠️ Invalid regex pattern '{pattern}': {e}")
+            continue
+        
+        if match_mask.any():
+            matched_indices = df.index[match_mask]
+            
+            df.loc[matched_indices, "classification"] = "Operational Error"
+            df.loc[matched_indices, "reason"] = reason
+            df.loc[matched_indices, "is_rule_based"] = True
+            df.loc[matched_indices, "is_anomaly"] = 1
+            df.loc[matched_indices, "anomaly_source"] = "Rule-Based"
+            
+            # Set tags (need to do this row by row due to list type)
+            for idx in matched_indices:
+                df.at[idx, "tag"] = [name]
+            
+            # Mark as classified
+            classified_mask = classified_mask | match_mask
+    
+    # Vectorized security-related check for classified rows
+    if classified_mask.any() and security_patterns:
+        rule_based_indices = df.index[classified_mask]
+        
+        for pattern_info in security_patterns:
+            pattern = pattern_info["pattern"]
+            safe_pattern = convert_to_non_capturing(pattern)
+            try:
+                security_mask = df.loc[rule_based_indices, "log"].str.contains(
+                    safe_pattern, case=False, regex=True, na=False
+                )
+                if security_mask.any():
+                    matched_security_indices = rule_based_indices[security_mask]
+                    df.loc[matched_security_indices, "is_security_related"] = True
+            except re.error:
+                continue
+    
+    return df
 
 
 def clean_tags(tags, valid_tags):
@@ -411,6 +516,8 @@ def evaluate_behavioral_rules(df, behavioral_rules):
 def extract_client_fields(df, client_config_file=None):
     """
     Extract client-specific fields based on external configuration.
+    Optimized with vectorized operations for much better performance.
+    
     Returns DataFrame with additional fields.
     """
     if not client_config_file or not os.path.exists(client_config_file):
@@ -429,6 +536,20 @@ def extract_client_fields(df, client_config_file=None):
         if not field_configs:
             return df
         
+        # === OPTIMIZATION: Parse all JSON logs once ===
+        def safe_json_parse(log):
+            """Safely parse JSON, return empty dict on failure."""
+            if not isinstance(log, str):
+                return {}
+            try:
+                result = json.loads(log)
+                return result if isinstance(result, dict) else {}
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        
+        # Parse all logs at once (vectorized)
+        parsed_logs = df["log"].apply(safe_json_parse)
+        
         for field_config in field_configs:
             field_name = field_config['name']
             extractors = field_config.get('extractors', [])
@@ -437,38 +558,66 @@ def extract_client_fields(df, client_config_file=None):
             # Initialize the field
             df[field_name] = None
             
-            # Extract from JSON fields if available
-            for record_idx, record in df.iterrows():
-                log_text = str(record['log']) if record['log'] else ""
-                
-                # Method 1: Try to parse log as JSON for structured extraction
-                try:
-                    log_data = json.loads(log_text)
-                    if isinstance(log_data, dict):
-                        for extractor in extractors:
-                            if extractor in log_data and log_data[extractor]:
-                                df.at[record_idx, field_name] = log_data[extractor]
+            # === Method 1: Extract from parsed JSON (vectorized) ===
+            def extract_from_json(parsed_dict):
+                """Extract field value from parsed JSON dict."""
+                for extractor in extractors:
+                    if extractor in parsed_dict and parsed_dict[extractor]:
+                        return parsed_dict[extractor]
+                return None
+            
+            df[field_name] = parsed_logs.apply(extract_from_json)
+            
+            # === Method 2: Check existing columns (vectorized) ===
+            # Only for rows still missing the field
+            missing_mask = df[field_name].isna()
+            
+            if missing_mask.any():
+                for extractor in extractors:
+                    if extractor in df.columns:
+                        # Fill missing values from existing column
+                        fill_mask = missing_mask & df[extractor].notna() & (df[extractor] != "")
+                        if fill_mask.any():
+                            df.loc[fill_mask, field_name] = df.loc[fill_mask, extractor]
+                            missing_mask = df[field_name].isna()
+                            if not missing_mask.any():
                                 break
-                except:
-                    pass
-                
-                # Method 2: Try direct field names in the record (if it came from parsed JSON structure)
-                if pd.isna(df.at[record_idx, field_name]):
-                    for extractor in extractors:
-                        if extractor in record and not pd.isna(record[extractor]) and record[extractor]:
-                            df.at[record_idx, field_name] = record[extractor]
-                            break
-                
-                # Method 3: Regex extraction from log text
-                if pd.isna(df.at[record_idx, field_name]) and regex_pattern:
-                    match = re.search(regex_pattern, log_text, re.IGNORECASE)
-                    if match:
-                        # Try to extract capture group, otherwise use full match
-                        value = match.group(1) if match.lastindex and match.lastindex >= 1 else match.group(0)
-                        df.at[record_idx, field_name] = value
-                        print(f"📌 Extracted {field_name}: {value} from log: {log_text[:100]}...")
+            
+            # === Method 3: Regex extraction (vectorized) ===
+            if regex_pattern and missing_mask.any():
+                try:
+                    # Use str.extract for vectorized regex extraction
+                    # Check if pattern has capture group
+                    if '(' in regex_pattern and ')' in regex_pattern:
+                        extracted = df.loc[missing_mask, "log"].str.extract(
+                            regex_pattern, flags=re.IGNORECASE, expand=False
+                        )
+                    else:
+                        # Wrap pattern in capture group for extraction
+                        extracted = df.loc[missing_mask, "log"].str.extract(
+                            f"({regex_pattern})", flags=re.IGNORECASE, expand=False
+                        )
+                    
+                    # Fill in extracted values
+                    if extracted is not None and not extracted.empty:
+                        # Handle both Series and DataFrame returns
+                        if isinstance(extracted, pd.DataFrame):
+                            extracted = extracted.iloc[:, 0]
+                        
+                        valid_extracts = extracted.notna() & (extracted != "")
+                        if valid_extracts.any():
+                            df.loc[missing_mask & valid_extracts.reindex(df.index, fill_value=False), field_name] = extracted[valid_extracts]
+                            
+                except re.error as e:
+                    print(f"⚠️ Invalid regex pattern for {field_name}: {e}")
         
+        # Count extracted values for reporting
+        extracted_counts = {fc['name']: df[fc['name']].notna().sum() for fc in field_configs}
         print(f"✅ Extracted {len(field_configs)} client-specific fields from {client_config_file}")
+        for name, count in extracted_counts.items():
+            if count > 0:
+                print(f"   📌 {name}: {count} values extracted")
+        
         return df
         
     except Exception as e:

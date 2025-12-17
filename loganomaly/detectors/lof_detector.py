@@ -3,7 +3,7 @@ import logging
 from sklearn.neighbors import LocalOutlierFactor
 
 from loganomaly import config as app_config
-from loganomaly.embedding_cache import get_embedding_model
+from loganomaly.embedding_cache import get_embedding_model, get_embedding_pool
 
 # === Logger setup ===
 logger = logging.getLogger(__name__)
@@ -25,8 +25,28 @@ def compute_embeddings(df, model_name=None):
     model_name = model_name or getattr(
         app_config, "EMBEDDING_MODEL", "sentence-transformers/paraphrase-MiniLM-L6-v2"
     )
-    model = get_embedding_model(model_name)
-    embeddings = model.encode(df["log"].tolist(), show_progress_bar=True)
+    use_pool = getattr(app_config, "USE_EMBEDDING_POOL", True)
+    threshold = getattr(app_config, "EMBEDDING_BATCH_THRESHOLD", 1000)
+    batch_size_cfg = getattr(app_config, "EMBEDDING_BATCH_SIZE", None)
+    default_batch = batch_size_cfg or 32  # SentenceTransformer default is 32
+    # Always supply an int for multi-process encoding; avoid None
+    batch_size = default_batch if len(df) > threshold else max(1, min(default_batch, len(df)))
+
+    if use_pool:
+        model, pool = get_embedding_pool(model_name)
+        embeddings = model.encode(
+            df["log"].tolist(),
+            batch_size=batch_size,
+            show_progress_bar=True,
+            pool=pool,
+        )
+    else:
+        model = get_embedding_model(model_name)
+        embeddings = model.encode(
+            df["log"].tolist(),
+            batch_size=batch_size,
+            show_progress_bar=True,
+        )
     return embeddings
 
 

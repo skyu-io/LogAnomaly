@@ -41,18 +41,24 @@ def setup_drain_config():
     drain_logs_dir.mkdir(parents=True, exist_ok=True)
 
 
-def init_drain():
+def init_drain(use_persistence=False):
     # Set drain3 logger to ERROR level to reduce output
     logging.getLogger("drain3").setLevel(logging.ERROR)
     
     setup_drain_config()
-    persistence = FilePersistence(str(app_config.DRAIN3_STATE_PATH))
+    
+    # Skip file persistence during mining for better performance
+    persistence = FilePersistence(str(app_config.DRAIN3_STATE_PATH)) if use_persistence else None
     miner = TemplateMiner(persistence)
 
     if app_config.USE_DRAIN3_LIGHT:
         print("⚡️ Using Drain3 Light Mode (Fast, less precise)")
         miner.drain.depth = 3
         miner.drain.similarity_threshold = 0.5
+    else:
+        # Optimize default settings for speed
+        miner.drain.depth = 4
+        miner.drain.similarity_threshold = 0.4
 
     return miner
 
@@ -61,16 +67,19 @@ def mine_templates(df):
     """
     Add 'log_template' column to DataFrame.
     """
-    miner = init_drain()
+    # No persistence during mining = faster (no disk I/O)
+    miner = init_drain(use_persistence=False)
+    
+    logs = df["log"].tolist()
+    n_logs = len(logs)
+    
+    print(f"🔍 Mining log templates for {n_logs} logs...")
+    
+    # Process in batches for better progress display
     templates = []
-
-    print("🔍 Mining log templates...")
-    for log in tqdm(df["log"], desc="Template Mining"):
+    for log in tqdm(logs, desc="Template Mining", mininterval=0.5):
         result = miner.add_log_message(log)
-        if result:
-            templates.append(result["template_mined"])
-        else:
-            templates.append("Unknown")
+        templates.append(result["template_mined"] if result else "Unknown")
 
     df["log_template"] = templates
     return df

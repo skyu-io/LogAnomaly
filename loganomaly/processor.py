@@ -12,8 +12,9 @@ import re
 from loganomaly import config as app_config
 from loganomaly.utils import (
     summarize_log_levels, is_non_anomalous,
-    find_security_leaks, summarize_tags, rule_based_classification,
-    redact_security_leaks, load_custom_patterns, evaluate_behavioral_rules
+    find_security_leaks, summarize_tags,
+    redact_security_leaks, load_custom_patterns, evaluate_behavioral_rules,
+    apply_rule_based_classification_vectorized
 )
 from loganomaly.pattern_miner import mine_templates
 from loganomaly.detectors.anomaly_detector import detect_knn_anomalies as knn_detect
@@ -302,23 +303,6 @@ def is_security_related_anomaly(row, security_patterns):
     return False
 
 
-def apply_rule_based_classification(row):
-    result = rule_based_classification(row["log"], custom_rule_patterns)
-    if result:
-        label, reason, tags = result
-        row["classification"] = label
-        row["reason"] = reason
-        row["tag"] = tags
-        row["is_rule_based"] = True
-        row["is_anomaly"] = 1
-        row["anomaly_source"] = "Rule-Based"
-        row["is_security_related"] = is_security_related_anomaly(row, custom_security_patterns)
-    else:
-        row["is_rule_based"] = False
-        row["is_security_related"] = False
-    return row
-
-
 def process_file(filepath):
     filename = os.path.basename(filepath)
     llm_phase = getattr(app_config, "LLM_PHASE", "full")
@@ -409,7 +393,8 @@ def process_file(filepath):
             embeddings=embeddings
         )
 
-    df = df.apply(apply_rule_based_classification, axis=1)
+    # Vectorized rule-based classification (much faster than row-by-row apply)
+    df = apply_rule_based_classification_vectorized(df, custom_rule_patterns, custom_security_patterns)
     rule_based_count = df["is_rule_based"].sum()
 
     max_score = df["anomaly_score"].max() if "anomaly_score" in df.columns else 0
@@ -917,7 +902,6 @@ def process_all_files():
     print(f"🔍 Found {len(files)} log files to process")
     for file in tqdm(files, desc="Processing Log Files"):
         process_file(file)
-
     print(f"✅ Completed. Results saved in → {app_config.RESULTS_FOLDER}")
 
 
